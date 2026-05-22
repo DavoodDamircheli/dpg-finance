@@ -1,0 +1,25 @@
+{
+    "_comment": "V1 convergence study: coarse spatial base, fine temporal to isolate spatial error",
+    "option_type": "call",
+    "sigma": 0.2,
+    "r": 0.05,
+    "T": 1.0,
+    "K": 100.0,
+    "S0": 100.0,
+    "domain": {
+        "x_min": -3.0,
+        "x_max":  3.0
+    },
+    "mesh": {
+        "N_x": 8,
+        "uniform": true
+    },
+    "time": {
+        "N_t": 5000,
+        "scheme": "backward_euler"
+    },
+    "fem": {
+        "p": 1,
+        "delta_p": 2
+    }
+}

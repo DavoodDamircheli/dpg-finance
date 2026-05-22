@@ -34,25 +34,52 @@ message(STATUS "MFEM library : ${MFEM_LIB}")
 message(STATUS "MFEM includes: ${MFEM_INCLUDE_DIR}")
 
 # ---------------------------------------------------------------------------
-# Hypre — typically installed alongside MFEM inside the container
+# Hypre — at /opt/hypre inside the container
+# MFEM's headers #include <HYPRE_utilities.h> (angle brackets), so
+# /opt/hypre/include MUST be on the include path.
 # ---------------------------------------------------------------------------
+set(HYPRE_ROOT /opt/hypre CACHE PATH "Hypre installation root")
 find_library(HYPRE_LIB
     NAMES HYPRE
-    HINTS /opt/hypre/lib ${MFEM_DIR}/lib /usr/local/lib
+    HINTS ${HYPRE_ROOT}/lib /usr/local/lib
     REQUIRED
 )
 find_path(HYPRE_INCLUDE_DIR
-    NAMES HYPRE.h
-    HINTS /opt/hypre/include ${MFEM_DIR}/include /usr/local/include
+    NAMES HYPRE_utilities.h
+    HINTS ${HYPRE_ROOT}/include
+    REQUIRED
 )
 message(STATUS "Hypre library : ${HYPRE_LIB}")
+message(STATUS "Hypre includes: ${HYPRE_INCLUDE_DIR}")
+
+# ---------------------------------------------------------------------------
+# SuiteSparse (UMFPack, KLU, AMD …) — MFEM links against these
+# ---------------------------------------------------------------------------
+find_path(SUITESPARSE_INCLUDE_DIR
+    NAMES umfpack.h
+    HINTS /usr/include/suitesparse /usr/include
+)
+find_library(UMFPACK_LIB  NAMES umfpack  HINTS /usr/lib/x86_64-linux-gnu)
+find_library(KLU_LIB      NAMES klu      HINTS /usr/lib/x86_64-linux-gnu)
+find_library(AMD_LIB      NAMES amd      HINTS /usr/lib/x86_64-linux-gnu)
+find_library(CHOLMOD_LIB  NAMES cholmod  HINTS /usr/lib/x86_64-linux-gnu)
+find_library(COLAMD_LIB   NAMES colamd  HINTS /usr/lib/x86_64-linux-gnu)
+find_library(CAMD_LIB     NAMES camd    HINTS /usr/lib/x86_64-linux-gnu)
+find_library(CCOLAMD_LIB  NAMES ccolamd HINTS /usr/lib/x86_64-linux-gnu)
+find_library(SS_CONFIG_LIB NAMES suitesparseconfig HINTS /usr/lib/x86_64-linux-gnu)
+find_library(OPENBLAS_LIB  NAMES openblas  HINTS /usr/lib/x86_64-linux-gnu)
+
+set(SUITESPARSE_LIBS
+    ${UMFPACK_LIB} ${KLU_LIB} ${AMD_LIB} ${CHOLMOD_LIB}
+    ${COLAMD_LIB} ${CAMD_LIB} ${CCOLAMD_LIB}
+    ${SS_CONFIG_LIB} ${OPENBLAS_LIB})
 
 # ---------------------------------------------------------------------------
 # METIS
 # ---------------------------------------------------------------------------
 find_library(METIS_LIB
     NAMES metis
-    HINTS /usr/local/lib /usr/lib
+    HINTS /usr/local/lib /usr/lib/x86_64-linux-gnu /usr/lib
     REQUIRED
 )
 message(STATUS "METIS library : ${METIS_LIB}")
@@ -64,11 +91,15 @@ add_library(dpg_common INTERFACE)
 target_include_directories(dpg_common INTERFACE
     ${CMAKE_SOURCE_DIR}/include
     ${MFEM_INCLUDE_DIR}
+    ${HYPRE_INCLUDE_DIR}
+    /usr/include
+    /usr/include/suitesparse
     ${MPI_CXX_INCLUDE_DIRS}
 )
 target_link_libraries(dpg_common INTERFACE
     ${MFEM_LIB}
     ${HYPRE_LIB}
+    ${SUITESPARSE_LIBS}
     ${METIS_LIB}
     MPI::MPI_CXX
 )

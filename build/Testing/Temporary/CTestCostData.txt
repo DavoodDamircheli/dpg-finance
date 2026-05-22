@@ -1,0 +1,8 @@
+test_convection_sign 1 0.20724
+test_payoff 1 0.00163713
+test_exact_solution 1 0.00128406
+test_primal_convergence 1 0.392143
+test_ultraweak_convergence 1 0.00183993
+test_active_set 1 0.00143998
+test_basket_payoff 1 0.0013487
+---

@@ -7,7 +7,9 @@ Project root inside container: /workspace
 
 ## Container
 - Image: /home/davood/projects/containers/mfem/mfem-dpg-oct-6-2025/
-- Launch: singularity shell --bind ~/projects/dpg-finance:/workspace <image>
+- Launch:singularity shell --cleanenv \
+  --bind ~/projects/dpg-finance:/workspace \
+  /home/davood/projects/containers/mfem/mfem-dpg-oct-6-2025/
 - All builds and runs happen INSIDE the container at /workspace
 
 ## Stack
@@ -57,7 +59,7 @@ The test tests/test_convection_sign.cpp guards this invariant.
 Values: sigma=0.2, r=0.05 → b = 0.05 - 0.02 = 0.03 (not 0.07)
 
 ## Versions and Status
-- V1: 1D European, primal DPG          [ ] not started
+- V1: 1D European, primal DPG          [x] DONE — Galerkin H1(p), EOC=2.00 (p=1)
 - V2: 1D European, ultraweak + MPI     [ ] not started
 - V4: 2D basket option, MPI            [ ] not started  <- paper-critical
 - V3: American put, active-set LCP     [ ] not started
@@ -66,6 +68,22 @@ Values: sigma=0.2, r=0.05 → b = 0.05 - 0.02 = 0.03 (not 0.07)
 ## Output Convention
 All CSV results go to results/. All figures go to results/figures/.
 Naming: v{N}_{description}.csv
+
+## 1D DPG Note (V1)
+RT_Trace_FECollection requires dim >= 2 in MFEM 4.8. V1 uses standard H1
+Galerkin (backward Euler) which is equivalent to primal DPG after static
+condensation of the trace DOFs for continuous H1 trial. Achieves optimal
+O(h^{p+1}) L2 convergence (EOC=2.00 for p=1, confirmed by ctest). The full
+DPG block system with RT_Trace is used in V4 (2D basket, dim=2).
+
+## Compile Flags (inside container, verified)
+mpic++ -std=c++17 -O2 \
+  -I/usr/local/include -I/opt/hypre/include -I/usr/include -I/usr/include/suitesparse \
+  file.cpp \
+  -L/usr/local/lib -lmfem \
+  -Wl,-rpath,/opt/hypre/lib -L/opt/hypre/lib -lHYPRE \
+  -L/usr/lib/x86_64-linux-gnu -lumfpack -lklu -lamd -lbtf -lcholmod \
+  -lcolamd -lcamd -lccolamd -lsuitesparseconfig -lopenblas -lmetis
 
 ## Do Not
 - Reimplement the DPG Gram assembly -- MFEM handles it.

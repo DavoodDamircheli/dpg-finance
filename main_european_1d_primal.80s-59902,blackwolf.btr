@@ -1,0 +1,8 @@
+
+main_european_1d_primal:59902 terminated with signal 11 at PC=5e0586b7d0b4 SP=7ffd3574fbb0.  Backtrace:
+./build/bin/main_european_1d_primal(+0x1250b4)[0x5e0586b7d0b4]
+./build/bin/main_european_1d_primal(+0x9d98b)[0x5e0586af598b]
+./build/bin/main_european_1d_primal(+0x98e99)[0x5e0586af0e99]
+/lib/x86_64-linux-gnu/libc.so.6(+0x29d90)[0x715f1de43d90]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80)[0x715f1de43e40]
+./build/bin/main_european_1d_primal(+0x9c495)[0x5e0586af4495]

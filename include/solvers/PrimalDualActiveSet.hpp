@@ -50,7 +50,8 @@ public:
     /**
      * @brief Construct with convergence options.
      */
-    explicit PrimalDualActiveSet(Options opts = Options()) : opts_(opts) {}
+    PrimalDualActiveSet() {}
+    explicit PrimalDualActiveSet(Options opts) : opts_(std::move(opts)) {}
 
     /**
      * @brief Return the set of active (contact) DOF indices from last solve.

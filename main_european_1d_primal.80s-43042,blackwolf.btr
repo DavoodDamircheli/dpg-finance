@@ -1,0 +1,11 @@
+
+main_european_1d_primal:43042 terminated with signal 6 at PC=76f5cf3c89fc SP=7ffdec75dc20.  Backtrace:
+/lib/x86_64-linux-gnu/libc.so.6(pthread_kill+0x12c)[0x76f5cf3c89fc]
+/lib/x86_64-linux-gnu/libc.so.6(raise+0x16)[0x76f5cf374476]
+/lib/x86_64-linux-gnu/libc.so.6(abort+0xd3)[0x76f5cf35a7f3]
+./build/bin/main_european_1d_primal(+0x5f6a0)[0x62fdd366c6a0]
+./build/bin/main_european_1d_primal(+0xee3e5)[0x62fdd36fb3e5]
+./build/bin/main_european_1d_primal(+0x996f8)[0x62fdd36a66f8]
+/lib/x86_64-linux-gnu/libc.so.6(+0x29d90)[0x76f5cf35bd90]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80)[0x76f5cf35be40]
+./build/bin/main_european_1d_primal(+0x9d215)[0x62fdd36aa215]
