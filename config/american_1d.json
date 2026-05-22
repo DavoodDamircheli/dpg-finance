@@ -1,0 +1,45 @@
+{
+    "_comment": "V3 — 1D American put option, primal DPG + primal-dual active-set LCP",
+    "option_type": "put",
+    "sigma": 0.2,
+    "r": 0.05,
+    "T": 1.0,
+    "K": 100.0,
+    "S0": 100.0,
+    "domain": {
+        "x_min": -3.0,
+        "x_max":  3.0,
+        "_comment": "log-price coordinates: x = log(S/K)"
+    },
+    "mesh": {
+        "N_x": 64,
+        "uniform": true
+    },
+    "time": {
+        "N_t": 100,
+        "scheme": "backward_euler"
+    },
+    "fem": {
+        "p": 1,
+        "delta_p": 2
+    },
+    "lcp": {
+        "method": "primal_dual_active_set",
+        "max_iter": 50,
+        "tol": 1e-10,
+        "_comment": "Active-set iterations at each time step for the obstacle constraint"
+    },
+    "solver": {
+        "type": "pcg",
+        "preconditioner": "jacobi",
+        "max_iter": 1000,
+        "rtol": 1e-10,
+        "atol": 1e-12
+    },
+    "output": {
+        "csv_prefix": "results/solutions/v3_american_1d",
+        "save_solution": true,
+        "save_exercise_boundary": true,
+        "refinement_levels": [0, 1, 2, 3]
+    }
+}

@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  HYPRE_VERSION: "2.27.0"
+  MFEM_TAG: "v4.8"
+  INSTALL_PREFIX: /usr/local
+  BUILD_CORES: 4
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            mpich \
+            libmpich-dev \
+            libmetis-dev \
+            libsuitesparse-dev \
+            wget \
+            ca-certificates \
+            git \
+            ninja-build
+
+      # -----------------------------------------------------------------------
+      - name: Cache Hypre build
+        id: cache-hypre
+        uses: actions/cache@v4
+        with:
+          path: /opt/hypre
+          key: hypre-${{ env.HYPRE_VERSION }}-ubuntu22
+
+      - name: Build Hypre ${{ env.HYPRE_VERSION }} from source
+        if: steps.cache-hypre.outputs.cache-hit != 'true'
+        run: |
+          cd /tmp
+          wget -q https://github.com/hypre-space/hypre/archive/refs/tags/v${HYPRE_VERSION}.tar.gz
+          tar xf v${HYPRE_VERSION}.tar.gz
+          cd hypre-${HYPRE_VERSION}/src
+          ./configure \
+            CC=mpicc \
+            CXX=mpicxx \
+            --prefix=/opt/hypre \
+            --with-MPI \
+            --disable-fortran
+          make -j${BUILD_CORES}
+          sudo make install
+
+      # -----------------------------------------------------------------------
+      - name: Cache MFEM build
+        id: cache-mfem
+        uses: actions/cache@v4
+        with:
+          path: /opt/mfem-install
+          key: mfem-${{ env.MFEM_TAG }}-hypre-${{ env.HYPRE_VERSION }}-ubuntu22
+
+      - name: Build MFEM ${{ env.MFEM_TAG }} from source
+        if: steps.cache-mfem.outputs.cache-hit != 'true'
+        run: |
+          cd /tmp
+          git clone --depth 1 --branch ${MFEM_TAG} \
+            https://github.com/mfem/mfem.git
+          cd mfem
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_INSTALL_PREFIX=/opt/mfem-install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=mpicxx \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DMFEM_USE_MPI=YES \
+            -DMFEM_USE_HYPRE=YES \
+            -DHYPRE_DIR=/opt/hypre \
+            -DMFEM_USE_METIS=YES \
+            -DMETIS_DIR=/usr
+          make -j${BUILD_CORES}
+          sudo make install
+
+      # -----------------------------------------------------------------------
+      - name: Configure dpg-finance
+        run: |
+          mkdir -p build
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMFEM_DIR=/opt/mfem-install \
+            -DCMAKE_PREFIX_PATH="/opt/mfem-install;/opt/hypre"
+
+      - name: Build dpg-finance
+        run: cmake --build build --parallel ${BUILD_CORES}
+
+      # -----------------------------------------------------------------------
+      - name: Run tests
+        working-directory: build
+        run: ctest --output-on-failure --timeout 120

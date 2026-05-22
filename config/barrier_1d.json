@@ -1,0 +1,48 @@
+{
+    "_comment": "V5 — 1D down-and-out barrier call option, primal DPG with monitoring",
+    "option_type": "barrier_down_out_call",
+    "sigma": 0.2,
+    "r": 0.05,
+    "T": 1.0,
+    "K": 100.0,
+    "S0": 100.0,
+    "barrier": {
+        "B": 80.0,
+        "type": "down_and_out",
+        "_comment": "Barrier level B < K; option knocked out if S hits B from above"
+    },
+    "domain": {
+        "x_min": -3.0,
+        "x_max":  3.0,
+        "_comment": "log-price coordinates: x = log(S/K); barrier at x_B = log(B/K)"
+    },
+    "mesh": {
+        "N_x": 64,
+        "uniform": true
+    },
+    "time": {
+        "N_t": 100,
+        "scheme": "backward_euler"
+    },
+    "fem": {
+        "p": 1,
+        "delta_p": 2
+    },
+    "solver": {
+        "type": "pcg",
+        "preconditioner": "jacobi",
+        "max_iter": 1000,
+        "rtol": 1e-10,
+        "atol": 1e-12
+    },
+    "monitoring": {
+        "enabled": true,
+        "check_interval": 10,
+        "_comment": "Log DPG residual every check_interval time steps"
+    },
+    "output": {
+        "csv_prefix": "results/solutions/v5_barrier_1d",
+        "save_solution": true,
+        "refinement_levels": [0, 1, 2, 3]
+    }
+}

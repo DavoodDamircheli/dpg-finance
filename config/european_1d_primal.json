@@ -1,0 +1,40 @@
+{
+    "_comment": "V1 — 1D European option, primal DPG formulation (serial)",
+    "option_type": "call",
+    "sigma": 0.2,
+    "r": 0.05,
+    "T": 1.0,
+    "K": 100.0,
+    "S0": 100.0,
+    "domain": {
+        "x_min": -3.0,
+        "x_max":  3.0,
+        "_comment": "log-price coordinates: x = log(S/K)"
+    },
+    "mesh": {
+        "N_x": 64,
+        "uniform": true
+    },
+    "time": {
+        "N_t": 100,
+        "scheme": "backward_euler"
+    },
+    "fem": {
+        "p": 1,
+        "delta_p": 2,
+        "_comment": "trial space order p, enriched test space order p+delta_p"
+    },
+    "solver": {
+        "type": "pcg",
+        "preconditioner": "jacobi",
+        "max_iter": 1000,
+        "rtol": 1e-10,
+        "atol": 1e-12
+    },
+    "output": {
+        "csv_prefix": "results/convergence/v1_european_1d_primal",
+        "save_solution": true,
+        "save_greeks": true,
+        "refinement_levels": [0, 1, 2, 3, 4]
+    }
+}

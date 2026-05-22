@@ -1,0 +1,55 @@
+{
+    "_comment": "V4 — 2D basket option (call-on-min), ultraweak DPG (MPI) — paper-critical",
+    "option_type": "basket_call_on_min",
+    "sigma": 0.2,
+    "r": 0.05,
+    "T": 1.0,
+    "K": 100.0,
+    "S0": 100.0,
+    "sigma1": 0.2,
+    "sigma2": 0.2,
+    "rho": 0.5,
+    "_comment_rho": "correlation coefficient between the two assets",
+    "domain": {
+        "x1_min": -3.0,
+        "x1_max":  3.0,
+        "x2_min": -3.0,
+        "x2_max":  3.0,
+        "_comment": "log-price coordinates: xi = log(Si/K)"
+    },
+    "mesh": {
+        "N_x": 64,
+        "N_y": 64,
+        "mesh_file": "/opt/mfem/data/inline-quad.mesh",
+        "uniform": true
+    },
+    "time": {
+        "N_t": 100,
+        "scheme": "backward_euler"
+    },
+    "fem": {
+        "p": 1,
+        "delta_p": 2
+    },
+    "solver": {
+        "type": "pcg",
+        "preconditioner": "boomeramg",
+        "max_iter": 2000,
+        "rtol": 1e-10,
+        "atol": 1e-12
+    },
+    "mpi": {
+        "num_procs": 8,
+        "_comment": "used only for documentation; actual nprocs set by mpirun"
+    },
+    "correlation_sweep": {
+        "rho_values": [-0.5, 0.0, 0.3, 0.5, 0.7, 0.9],
+        "_comment": "Values used in scripts/run_correlation_sweep.py"
+    },
+    "output": {
+        "csv_prefix": "results/solutions/v4_basket_2d",
+        "save_solution": true,
+        "save_greeks": true,
+        "refinement_levels": [0, 1, 2, 3]
+    }
+}
