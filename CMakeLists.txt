@@ -106,11 +106,36 @@ target_link_libraries(dpg_common INTERFACE
 target_compile_options(dpg_common INTERFACE -O2 -Wall -Wextra)
 
 # ---------------------------------------------------------------------------
+# DPG utility library — pre-built .o files from the MFEM miniapp build
+# (needed by the ultraweak DPG formulation: ParDPGWeakForm, etc.)
+# ---------------------------------------------------------------------------
+set(DPG_UTIL_DIR
+    /opt/mfem/artifacts/miniapps/dpg/CMakeFiles/pconvection-diffusion-dpg.dir/util)
+
+add_library(dpg_util INTERFACE)
+target_sources(dpg_util INTERFACE
+    ${DPG_UTIL_DIR}/pweakform.cpp.o
+    ${DPG_UTIL_DIR}/weakform.cpp.o
+    ${DPG_UTIL_DIR}/blockstaticcond.cpp.o
+    ${DPG_UTIL_DIR}/complexstaticcond.cpp.o
+    ${DPG_UTIL_DIR}/complexweakform.cpp.o
+    ${DPG_UTIL_DIR}/pcomplexweakform.cpp.o
+    ${DPG_UTIL_DIR}/pml.cpp.o
+)
+target_include_directories(dpg_util INTERFACE /opt/mfem/miniapps/dpg)
+
+# ---------------------------------------------------------------------------
 # Helper: register a main executable from src/main_*.cpp
 # ---------------------------------------------------------------------------
 function(add_dpg_executable name source)
     add_executable(${name} ${source})
     target_link_libraries(${name} PRIVATE dpg_common)
+endfunction()
+
+# Helper for executables that need the DPG ultraweak (ParDPGWeakForm) utilities
+function(add_dpg_uw_executable name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE dpg_common dpg_util)
 endfunction()
 
 # ---------------------------------------------------------------------------
@@ -119,13 +144,13 @@ endfunction()
 add_dpg_executable(main_european_1d_primal
     src/main_european_1d_primal.cpp)
 
-add_dpg_executable(main_european_1d_ultraweak_mpi
+add_dpg_uw_executable(main_european_1d_ultraweak_mpi
     src/main_european_1d_ultraweak_mpi.cpp)
 
 add_dpg_executable(main_american_1d
     src/main_american_1d.cpp)
 
-add_dpg_executable(main_european_2d_basket_mpi
+add_dpg_uw_executable(main_european_2d_basket_mpi
     src/main_european_2d_basket_mpi.cpp)
 
 add_dpg_executable(main_barrier_1d
@@ -145,10 +170,28 @@ function(add_dpg_test name source)
     add_test(NAME ${name} COMMAND ${CMAKE_BINARY_DIR}/tests/${name})
 endfunction()
 
+# Helper for tests that need ParDPGWeakForm utilities
+function(add_dpg_uw_test name source)
+    add_executable(${name} ${source})
+    set_target_properties(${name} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+    target_link_libraries(${name} PRIVATE dpg_common dpg_util)
+    add_test(NAME ${name} COMMAND ${CMAKE_BINARY_DIR}/tests/${name})
+endfunction()
+
 add_dpg_test(test_convection_sign    tests/test_convection_sign.cpp)
 add_dpg_test(test_payoff             tests/test_payoff.cpp)
 add_dpg_test(test_exact_solution     tests/test_exact_solution.cpp)
 add_dpg_test(test_primal_convergence tests/test_primal_convergence.cpp)
-add_dpg_test(test_ultraweak_convergence tests/test_ultraweak_convergence.cpp)
+add_dpg_uw_test(test_ultraweak_convergence tests/test_ultraweak_convergence.cpp)
 add_dpg_test(test_active_set         tests/test_active_set.cpp)
 add_dpg_test(test_basket_payoff      tests/test_basket_payoff.cpp)
+add_dpg_uw_test(test_delta_extraction    tests/test_delta_extraction.cpp)
+add_dpg_uw_test(test_mpi_consistency    tests/test_mpi_consistency.cpp)
+add_dpg_test(test_diffusion_tensor      tests/test_diffusion_tensor.cpp)
+
+# Timeouts (seconds) for tests that run a DPG solve
+set_tests_properties(test_ultraweak_convergence PROPERTIES TIMEOUT 300)
+set_tests_properties(test_delta_extraction      PROPERTIES TIMEOUT 120)
+set_tests_properties(test_mpi_consistency       PROPERTIES TIMEOUT  60)
+set_tests_properties(test_diffusion_tensor      PROPERTIES TIMEOUT  30)

@@ -1,0 +1,26 @@
+{
+    "_comment": "V2 convergence study: L2(p-1) trial with p=2 → rate O(h^2)",
+    "option_type": "call",
+    "sigma": 0.2,
+    "r": 0.05,
+    "T": 1.0,
+    "K": 100.0,
+    "S0": 100.0,
+    "domain": {
+        "x_min": -3.0,
+        "x_max":  3.0
+    },
+    "mesh": {
+        "N_x": 4,
+        "uniform": true
+    },
+    "time": {
+        "N_t": 5000,
+        "scheme": "backward_euler"
+    },
+    "fem": {
+        "p": 2,
+        "delta_p": 1,
+        "_comment": "L2(p-1)=L2(1) trial; O(h^2) spatial convergence expected"
+    }
+}

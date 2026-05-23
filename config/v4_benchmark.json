@@ -1,0 +1,33 @@
+{
+    "_comment": "V4 benchmark config — small mesh for fast MC comparison runs",
+    "option_type": "basket_call_on_min",
+    "sigma1": 0.2,
+    "sigma2": 0.2,
+    "rho": 0.5,
+    "r": 0.05,
+    "T": 1.0,
+    "K": 100.0,
+    "domain": {
+        "x1_min": -3.0,
+        "x1_max":  3.0,
+        "x2_min": -3.0,
+        "x2_max":  3.0
+    },
+    "mesh": {
+        "N_x": 16,
+        "N_y": 16
+    },
+    "time": {
+        "N_t": 500,
+        "scheme": "backward_euler"
+    },
+    "fem": {
+        "p": 2,
+        "delta_p": 1
+    },
+    "solver": {
+        "max_iter": 2000,
+        "rtol": 1e-10,
+        "atol": 1e-14
+    }
+}
