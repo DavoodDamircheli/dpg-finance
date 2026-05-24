@@ -177,7 +177,7 @@ A is positive definite iff |rho| < 1. Assert this before solving.
 - V2: 1D European, ultraweak + MPI     [x] DONE — L2(1) trial, EOC≈2.24 (p=2), Delta error@ATM≈0.005
 - V4: 2D basket option, MPI            [~] Parts A+B coded; needs container build+run  ← paper-critical
 - V3: American put, active-set LCP     [x] DONE — primal DPG + PDAS, exercise boundary extracted
-- V5: Barrier option, monitoring       [ ] not started
+- V5: Barrier option, monitoring       [x] DONE — discrete double-barrier call, daily/weekly monitoring
 
 ## Key Results
 
@@ -197,6 +197,17 @@ A is positive definite iff |rho| < 1. Assert this before solving.
              results/solutions/v3_american_1d_exercise_boundary.csv (t,S_star)
   - Benchmark: ATM price at K=100 vs binomial tree (5.57); assert |DPG-5.57|<0.05
   - Tests: test_active_set (toy LCP), test_american_dominates_european (AM>=EU)
+- V5: Discrete double-barrier call, primal DPG H1(1)
+  - Knockout: u[i] = 0 for x_i < log(S_lower/K) or x_i > log(S_upper/K) at monitoring dates
+  - Monitoring: "daily" (252/yr), "weekly" (52/yr), or "custom" dates
+  - V1 DPG operator unchanged; barrier is a post-step projection only
+  - Ordering verified: daily_price <= weekly_price <= european_price
+  - Near-barrier Greeks: Delta = du/dx / S, Gamma = (d²u/dx² - du/dx) / S²
+  - Outputs: results/solutions/v5_barrier_{daily,weekly}.csv
+             results/greeks/v5_barrier_greeks.csv
+             results/convergence/v5_daily_vs_weekly_comparison.csv
+  - Tests: test_barrier_projection (knockout correctness), test_barrier_ordering (pricing inequality)
+  - Comparison script: python3 scripts/run_barrier_comparison.py
 - V4a: 2D basket DPG solver complete (src/main_european_2d_basket_mpi.cpp)
   - True 2D mesh N_x×N_y quads; tensor diffusion A, vector convection b=(b1,b2)
   - BSDiffusion2D + BSDiffusionInverse2D from include/dpg/BSCoefficients2D.hpp

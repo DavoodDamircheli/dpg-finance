@@ -2,90 +2,86 @@
 #ifndef DPG_FINANCE_BARRIERPROJECTION_HPP
 #define DPG_FINANCE_BARRIERPROJECTION_HPP
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
-#include "../core/BlackScholesParams.hpp"
+#include <mfem.hpp>
 
 namespace dpg_finance {
 
 /**
- * @brief Enforces barrier option boundary conditions at the knock-out level.
+ * Configuration for a discrete double-barrier option.
  *
- * For a down-and-out barrier call with barrier B (in asset price):
- *   x_B = log(B/K)  (log-price of the barrier)
+ * The knockout region is { x < x_lower() OR x > x_upper() }
+ * where x = log(S/K) is the log-price coordinate.
+ * Monitoring is discrete: the knockout is applied only on specific dates.
+ */
+struct BarrierConfig {
+    double S_lower = 85.0;    ///< Lower barrier in S-space
+    double S_upper = 120.0;   ///< Upper barrier in S-space
+    double K       = 100.0;   ///< Strike (for log-price conversion)
+
+    std::string         monitoring   = "daily"; ///< "daily", "weekly", or "custom"
+    std::vector<double> custom_dates;            ///< Used when monitoring == "custom"
+
+    double x_lower() const noexcept { return std::log(S_lower / K); }
+    double x_upper() const noexcept { return std::log(S_upper / K); }
+
+    /**
+     * Returns sorted monitoring tau values in (0, T] (backward time).
+     *   "daily"  -> 252 evenly-spaced dates per year
+     *   "weekly" -> 52  evenly-spaced dates per year
+     *   "custom" -> custom_dates as-is (caller must sort)
+     */
+    std::vector<double> GetMonitoringTaus(double T) const {
+        if (monitoring == "custom") return custom_dates;
+
+        int n_per_year = 0;
+        if      (monitoring == "daily")  n_per_year = 252;
+        else if (monitoring == "weekly") n_per_year = 52;
+        else throw std::invalid_argument("Unknown monitoring type: " + monitoring);
+
+        int n = std::max(1, (int)std::round(n_per_year * T));
+        std::vector<double> taus;
+        taus.reserve(n);
+        for (int j = 1; j <= n; j++)
+            taus.push_back(j * T / n);
+        return taus;
+    }
+};
+
+/**
+ * Applies the discrete-barrier knockout projection at a monitoring date.
  *
- * The boundary condition u(x_B, tau) = 0 is applied:
- *  - As a Dirichlet constraint on the FEM mesh (the barrier is placed at
- *    a mesh node for uniform grids, or the mesh is aligned with x_B).
- *  - As a post-step projection: all DOFs with x_i <= x_B are zeroed.
- *
- * The "projection" terminology is consistent with the obstacle literature
- * (project onto the feasible set u(x_B) = 0).
+ * ApplyKnockout zeroes u[i] for every DOF i whose x-coordinate lies
+ * outside the window [x_lower, x_upper].  BC DOFs are also zeroed
+ * but will be overridden by the next time-step's BC projection.
  */
 class BarrierProjection {
 public:
-    /**
-     * @brief Supported barrier types.
-     */
-    enum class Type {
-        DownAndOut, ///< Knocked out if S falls below B
-        UpAndOut,   ///< Knocked out if S rises above B
-    };
+    explicit BarrierProjection(BarrierConfig cfg) : cfg_(std::move(cfg)) {}
 
     /**
-     * @brief Construct from Black-Scholes params and barrier configuration.
-     * @param p     Black-Scholes parameters
-     * @param B     Barrier level in asset price (S-space), e.g. 80.0
-     * @param type  Barrier type (default: DownAndOut)
+     * Zero out solution values outside the barrier window.
+     * @param u        Solution vector (modified in place)
+     * @param x_coords DOF x-coordinates, same length as u
      */
-    BarrierProjection(const BlackScholesParams& p,
-                      double B,
-                      Type type = Type::DownAndOut)
-        : p_(p), B_(B), type_(type) {
-        if (B <= 0.0)
-            throw std::invalid_argument("Barrier level B must be positive");
-        if (type_ == Type::DownAndOut && B >= p_.K)
-            throw std::invalid_argument("Down-and-out barrier B must be < K");
-        if (type_ == Type::UpAndOut && B <= p_.K)
-            throw std::invalid_argument("Up-and-out barrier B must be > K");
+    void ApplyKnockout(mfem::Vector& u, const mfem::Vector& x_coords) const {
+        const double xl = cfg_.x_lower();
+        const double xu = cfg_.x_upper();
+        for (int i = 0; i < u.Size(); i++) {
+            if (x_coords[i] < xl || x_coords[i] > xu)
+                u[i] = 0.0;
+        }
     }
 
-    /**
-     * @brief Log-price coordinate of the barrier: x_B = log(B/K).
-     */
-    double x_barrier() const noexcept { return std::log(B_ / p_.K); }
-
-    /**
-     * @brief Returns true if the coordinate x is in the knocked-out region.
-     * @param x  log-price coordinate
-     */
-    bool is_knocked_out(double x) const noexcept {
-        return (type_ == Type::DownAndOut) ? (x <= x_barrier())
-                                           : (x >= x_barrier());
-    }
-
-    /**
-     * @brief Apply zero-BC projection to a solution vector in-place.
-     *
-     * Zeroes all entries where the corresponding DOF is in the knock-out
-     * region.
-     *
-     * TODO(V5): implement taking mfem::GridFunction& u and mfem::FiniteElementSpace&
-     */
-    void project(/* mfem::GridFunction& u */) const {
-        // TODO(V5): iterate over DOFs, zero those with x_i <= x_B
-        throw std::runtime_error("BarrierProjection::project() not yet implemented");
-    }
-
-    double barrier() const noexcept { return B_; }
-    Type   type()    const noexcept { return type_; }
+    const BarrierConfig& config() const noexcept { return cfg_; }
 
 private:
-    BlackScholesParams p_;
-    double             B_;
-    Type               type_;
+    BarrierConfig cfg_;
 };
 
 } // namespace dpg_finance

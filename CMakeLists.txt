@@ -189,7 +189,9 @@ add_dpg_test(test_american_dominates_european   tests/test_american_dominates_eu
 add_dpg_test(test_basket_payoff      tests/test_basket_payoff.cpp)
 add_dpg_uw_test(test_delta_extraction    tests/test_delta_extraction.cpp)
 add_dpg_uw_test(test_mpi_consistency    tests/test_mpi_consistency.cpp)
-add_dpg_test(test_diffusion_tensor      tests/test_diffusion_tensor.cpp)
+add_dpg_test(test_diffusion_tensor          tests/test_diffusion_tensor.cpp)
+add_dpg_test(test_barrier_projection        tests/test_barrier_projection.cpp)
+add_dpg_test(test_barrier_ordering          tests/test_barrier_ordering.cpp)
 
 # Timeouts (seconds) for tests that run a DPG solve
 set_tests_properties(test_ultraweak_convergence PROPERTIES TIMEOUT 300)
@@ -198,3 +200,5 @@ set_tests_properties(test_mpi_consistency       PROPERTIES TIMEOUT  60)
 set_tests_properties(test_diffusion_tensor              PROPERTIES TIMEOUT  30)
 set_tests_properties(test_active_set                    PROPERTIES TIMEOUT  30)
 set_tests_properties(test_american_dominates_european   PROPERTIES TIMEOUT  60)
+set_tests_properties(test_barrier_projection            PROPERTIES TIMEOUT  20)
+set_tests_properties(test_barrier_ordering              PROPERTIES TIMEOUT 120)
