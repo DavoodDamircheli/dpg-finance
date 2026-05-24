@@ -2,78 +2,151 @@
 #ifndef DPG_FINANCE_PRIMALDUALACTIVESET_HPP
 #define DPG_FINANCE_PRIMALDUALACTIVESET_HPP
 
+#include <algorithm>
 #include <functional>
-#include <vector>
 #include <stdexcept>
+#include <vector>
+
+#include <mfem.hpp>
 
 namespace dpg_finance {
 
 /**
- * @brief Primal-Dual Active Set (PDAS) solver for the American option LCP.
+ * Primal-Dual Active Set (PDAS) solver for the American option LCP.
  *
- * At each backward time step the American option problem is a Linear
- * Complementarity Problem (LCP):
+ * LCP:  u >= phi,  A*u - f >= 0,  (u-phi)^T (A*u-f) = 0
+ * A is the DPG primal stiffness matrix (SPD) → global convergence guaranteed.
  *
- *   Find u >= psi such that  (A*u - f) >= 0  and  (u-psi).(A*u-f) = 0
+ * Active-set criterion (Hintermueller, Ito, Kunisch 2002):
+ *   A_k = {i not BC : u_i - phi_i <= c * (A*u - f)_i}
  *
- * where psi = obstacle (early-exercise payoff) and A is the DPG stiffness
- * matrix for the current time step.
- *
- * The PDAS algorithm:
- *  1. Initialise active set A = {i : u_i < psi_i} (contact nodes).
- *  2. Solve the reduced system with u_A = psi_A (pinned) and the
- *     complementary set free.
- *  3. Update active/inactive partition based on the solution and multiplier.
- *  4. Repeat until the active set no longer changes.
- *
- * Reference: Hintermueller, Ito, Kunisch (2002), SIAM J. Optim.
- * MFEM template: /opt/mfem/examples/ex36.cpp
+ * Reference: /opt/mfem/examples/ex36.cpp for MFEM obstacle-problem structure.
  */
 class PrimalDualActiveSet {
 public:
-    /**
-     * @brief PDAS convergence parameters.
-     */
     struct Options {
-        int    max_iter = 50;    ///< Maximum PDAS outer iterations
-        double tol      = 1e-10; ///< Active-set change tolerance
-        bool   verbose  = false; ///< Print iteration history
+        int    max_iter = 50;
+        double c        = 1.0;   ///< active-set shift parameter
+        bool   verbose  = false;
     };
 
-    /**
-     * @brief Obstacle function g(i) returning the lower bound at DOF i.
-     *
-     * For the American put: g(x_i) = max(1 - exp(x_i), 0).
-     */
     using ObstacleFn = std::function<double(int dof_index, double x_coord)>;
 
-    /**
-     * @brief Construct with convergence options.
-     */
-    PrimalDualActiveSet() {}
+    PrimalDualActiveSet() = default;
     explicit PrimalDualActiveSet(Options opts) : opts_(std::move(opts)) {}
 
-    /**
-     * @brief Return the set of active (contact) DOF indices from last solve.
-     */
     const std::vector<int>& active_set() const { return active_set_; }
-
-    /**
-     * @brief Number of PDAS iterations taken in the last solve.
-     */
     int iterations() const { return iterations_; }
 
     /**
-     * @brief Solve the LCP at a single time step.
+     * Solve the LCP at one time step.
      *
-     * @param obstacle  Callable returning g(i, x_i) for each DOF
-     *
-     * TODO(V3): implement solve() taking mfem::SparseMatrix& A,
-     *           mfem::Vector& f, mfem::Vector& u, ObstacleFn obstacle
+     * @param A_orig   Full bilinear-form matrix (no BC elimination applied)
+     * @param f_nat    Assembled linear form (no BC lifting)
+     * @param u        Solution (in/out); must start >= phi (feasible initial guess)
+     * @param phi      Obstacle values at every DOF
+     * @param ess_tdofs  Essential (boundary) DOF indices — always pinned by BC
+     * @param x_bc     Values to enforce at essential DOFs
      */
-    void solve(ObstacleFn /*obstacle*/) {
-        // TODO(V3): implement PDAS loop
-        throw std::runtime_error("PrimalDualActiveSet::solve() not yet implemented");
+    void Solve(const mfem::SparseMatrix& A_orig,
+               const mfem::Vector&       f_nat,
+               mfem::Vector&             u,
+               const mfem::Vector&       phi,
+               const mfem::Array<int>&   ess_tdofs,
+               const mfem::Vector&       x_bc)
+    {
+        const int n = u.Size();
+
+        std::vector<bool> is_bc(n, false);
+        for (int k = 0; k < ess_tdofs.Size(); ++k)
+            is_bc[ess_tdofs[k]] = true;
+
+        iterations_ = opts_.max_iter;
+        std::vector<bool> active(n, false), prev_active(n, false);
+        bool first = true;
+
+        for (int iter = 0; iter < opts_.max_iter; ++iter) {
+            // 1. Residual r = A*u - f
+            mfem::Vector r(n);
+            A_orig.Mult(u, r);
+            r -= f_nat;
+
+            // 2. Active set: {i not BC : u_i - phi_i <= c * r_i}
+            for (int i = 0; i < n; ++i)
+                active[i] = !is_bc[i] && (u[i] - phi[i] <= opts_.c * r[i]);
+
+            if (opts_.verbose) {
+                int cnt = (int)std::count(active.begin(), active.end(), true);
+                mfem::out << "  PDAS iter=" << iter << " |A|=" << cnt << "\n";
+            }
+
+            // 3. Convergence: active set unchanged from previous iteration
+            if (!first && active == prev_active) {
+                iterations_ = iter;
+                break;
+            }
+            first = false;
+            prev_active = active;
+
+            // 4. Pinned values: x_bc for BC DOFs, phi for active DOFs, 0 elsewhere
+            mfem::Vector pinned(n); pinned = 0.0;
+            for (int k = 0; k < ess_tdofs.Size(); ++k)
+                pinned[ess_tdofs[k]] = x_bc[ess_tdofs[k]];
+            for (int i = 0; i < n; ++i)
+                if (active[i]) pinned[i] = phi[i];
+
+            // 5. Lifting: rhs = f - A * pinned (subtracts contribution of pinned DOFs)
+            mfem::Vector rhs(f_nat);
+            A_orig.AddMult(pinned, rhs, -1.0);
+
+            // 6. Build A_mod: zero rows/cols of all pinned DOFs, set diagonal = 1
+            mfem::SparseMatrix A_mod(A_orig);
+            for (int i = 0; i < n; ++i)
+                if (active[i] || is_bc[i])
+                    A_mod.EliminateRowCol(i, mfem::Operator::DIAG_ONE);
+
+            // 7. Overwrite RHS at pinned DOFs
+            for (int i = 0; i < n; ++i)
+                if (active[i] || is_bc[i])
+                    rhs[i] = pinned[i];
+
+            // 8. Solve A_mod * u_new = rhs (GS-preconditioned CG)
+            mfem::GSSmoother prec(A_mod);
+            mfem::Vector u_new(pinned);   // initial guess has correct BC/obstacle values
+            mfem::PCG(A_mod, prec, rhs, u_new, 0, 1000, 1e-12, 0.0);
+            u = u_new;
+        }
+
+        // Record final active-set indices (DOFs pinned to obstacle)
+        active_set_.clear();
+        for (int i = 0; i < n; ++i)
+            if (active[i]) active_set_.push_back(i);
+    }
+
+    /**
+     * Pointwise complementarity residual: max_i |(u_i - phi_i) * (A*u - f)_i|
+     * (excluding BC DOFs). Should be < 1e-8 at convergence.
+     */
+    double ComplementarityResidual(const mfem::SparseMatrix& A,
+                                   const mfem::Vector&       f,
+                                   const mfem::Vector&       u,
+                                   const mfem::Vector&       phi,
+                                   const mfem::Array<int>&   ess_tdofs) const
+    {
+        const int n = u.Size();
+        std::vector<bool> is_bc(n, false);
+        for (int k = 0; k < ess_tdofs.Size(); ++k)
+            is_bc[ess_tdofs[k]] = true;
+
+        mfem::Vector r(n);
+        A.Mult(u, r);
+        r -= f;
+
+        double res = 0.0;
+        for (int i = 0; i < n; ++i)
+            if (!is_bc[i])
+                res = std::max(res, std::abs((u[i] - phi[i]) * r[i]));
+        return res;
     }
 
 private:

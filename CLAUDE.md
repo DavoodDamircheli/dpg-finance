@@ -176,7 +176,7 @@ A is positive definite iff |rho| < 1. Assert this before solving.
 - V1: 1D European, primal DPG          [x] DONE — Galerkin H1(p), EOC=2.00 (p=1)
 - V2: 1D European, ultraweak + MPI     [x] DONE — L2(1) trial, EOC≈2.24 (p=2), Delta error@ATM≈0.005
 - V4: 2D basket option, MPI            [~] Parts A+B coded; needs container build+run  ← paper-critical
-- V3: American put, active-set LCP     [ ] not started
+- V3: American put, active-set LCP     [x] DONE — primal DPG + PDAS, exercise boundary extracted
 - V5: Barrier option, monitoring       [ ] not started
 
 ## Key Results
@@ -187,6 +187,16 @@ A is positive definite iff |rho| < 1. Assert this before solving.
   - MPI via ParDPGWeakForm, block-diagonal AMG/AMS preconditioner
   - Delta extracted directly from sigma trial variable (no extra solve)
   - Delta CSV gathered from all MPI ranks via MPI_Allgather + MPI_Gatherv
+- V3: American put, primal DPG H1(1) + PDAS active-set LCP
+  - obstacle phi(x) = K*max(1-exp(x), 0) enforced at every time step
+  - PDAS criterion: A_k = {i : u_i - phi_i <= c*(A*u-f)_i}, c=1, SPD → global convergence
+  - BCs: left = K*(1-exp(x_min)) intrinsic, right = 0; IC = put payoff
+  - Exercise boundary S_free(tau) = K*exp(x_star) where x_star = rightmost active node
+  - Outputs: results/solutions/v3_american_put.csv (tau,x,S,u_american,u_european)
+             results/convergence/v3_active_set_iterations.csv (tau,n_iter,comp_residual)
+             results/solutions/v3_american_1d_exercise_boundary.csv (t,S_star)
+  - Benchmark: ATM price at K=100 vs binomial tree (5.57); assert |DPG-5.57|<0.05
+  - Tests: test_active_set (toy LCP), test_american_dominates_european (AM>=EU)
 - V4a: 2D basket DPG solver complete (src/main_european_2d_basket_mpi.cpp)
   - True 2D mesh N_x×N_y quads; tensor diffusion A, vector convection b=(b1,b2)
   - BSDiffusion2D + BSDiffusionInverse2D from include/dpg/BSCoefficients2D.hpp
