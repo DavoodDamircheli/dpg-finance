@@ -29,7 +29,9 @@ VERSIONS = {
     # V1 uses a coarse base (N_x=8) with fine temporal (N_t=5000) to isolate spatial error.
     # --refine 0..4 doubles N_x → N_x = 8, 16, 32, 64, 128.
     1: ("main_european_1d_primal",       "config/v1_conv_study.json",         False, 1),
-    2: ("main_european_1d_ultraweak_mpi","config/european_1d_ultraweak.json", True,  4),
+    # V2 uses v2_conv_study.json (N_x=4 base, N_t=5000) to isolate spatial error.
+    # --refine 0..2 doubles N_x → N_x = 4, 8, 16.
+    2: ("main_european_1d_ultraweak_mpi","config/v2_conv_study.json",        True,  1),
     4: ("main_european_2d_basket_mpi",   "config/european_2d_basket.json",    True,  8),
 }
 
@@ -77,7 +79,9 @@ def run_version(version: int, levels: list, dry_run: bool) -> None:
         return
 
     RESULTS.mkdir(parents=True, exist_ok=True)
-    csv_path = RESULTS / f"v{version}_spatial_primal.csv"
+    # V1 writes v1_spatial_primal.csv, V2 writes v2_spatial_ultraweak.csv
+    csv_suffix = {1: "spatial_primal", 2: "spatial_ultraweak", 4: "spatial_primal"}
+    csv_path = RESULTS / f"v{version}_{csv_suffix.get(version, 'spatial_primal')}.csv"
     # Truncate CSV so each run starts fresh
     if csv_path.exists():
         csv_path.unlink()

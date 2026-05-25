@@ -78,14 +78,14 @@ def table_A1():
     lines.append("  \\begin{tabular}{rcccccc}\n    \\hline\n")
     lines.append("    $N_x$ & $h$ & ndof & Price (ATM) & $\\|e\\|_{L^2}$ & EOC \\\\\n    \\hline\n")
 
+    has_eoc = "EOC_L2" in data.dtype.names
     for row in data:
         N_x   = int(row["N_x"])
         h     = float(row["h"])
         ndof  = int(row["ndof"])
         price = float(row["price_at_S0"])
         l2e   = float(row["L2_error"])
-        eoc   = float(row.get("EOC_L2", float("nan"))
-                       if "EOC_L2" in data.dtype.names else float("nan"))
+        eoc   = float(row["EOC_L2"]) if has_eoc else float("nan")
         lines.append(f"    ${N_x}$ & ${h:.4f}$ & ${ndof}$ & "
                      f"${price:.5f}$ & {fmt_sci(l2e)} & {fmt_eoc(eoc)} \\\\\n")
 
@@ -110,14 +110,15 @@ def table_A2():
     lines.append("  \\begin{tabular}{rccccc}\n    \\hline\n")
     lines.append("    $N_x$ & $h$ & total DOF & Price (ATM) & $\\|e\\|_{L^2}$ & EOC \\\\\n    \\hline\n")
 
+    has_total = "total_ndof" in data.dtype.names
+    has_eoc   = "EOC_L2"    in data.dtype.names
     for row in data:
         N_x       = int(row["N_x"])
         h         = float(row["h"])
-        total_dof = int(row["total_ndof"]) if "total_ndof" in data.dtype.names else int(row["ndof_u"])
+        total_dof = int(row["total_ndof"]) if has_total else int(row["ndof_u"])
         price     = float(row["price_at_S0"])
         l2e       = float(row["L2_error"])
-        eoc       = float(row.get("EOC_L2", float("nan"))
-                           if "EOC_L2" in data.dtype.names else float("nan"))
+        eoc       = float(row["EOC_L2"]) if has_eoc else float("nan")
         lines.append(f"    ${N_x}$ & ${h:.4f}$ & ${total_dof}$ & "
                      f"${price:.5f}$ & {fmt_sci(l2e)} & {fmt_eoc(eoc)} \\\\\n")
 
@@ -149,14 +150,18 @@ def table_A3():
         lines.append("  \\begin{tabular}{rccc}\n    \\hline\n")
         lines.append("    $N_t$ & $\\Delta t$ & V1 $\\|e\\|_{L^2}$ & V1 EOC \\\\\n    \\hline\n")
 
+    has_v1l2 = "V1_L2_error" in data.dtype.names
+    has_v1eo = "V1_EOC_L2"  in data.dtype.names
+    has_v2l2 = "V2_L2_error" in data.dtype.names
+    has_v2eo = "V2_EOC_L2"  in data.dtype.names
     for row in data:
         N_t  = int(row["N_t"])
         dt   = float(row["dt"])
-        v1l2 = float(row["V1_L2_error"]) if "V1_L2_error" in data.dtype.names else float("nan")
-        v1eo = float(row["V1_EOC_L2"])   if "V1_EOC_L2"   in data.dtype.names else float("nan")
+        v1l2 = float(row["V1_L2_error"]) if has_v1l2 else float("nan")
+        v1eo = float(row["V1_EOC_L2"])   if has_v1eo else float("nan")
         if has_v2:
-            v2l2 = float(row["V2_L2_error"]) if "V2_L2_error" in data.dtype.names else float("nan")
-            v2eo = float(row["V2_EOC_L2"])   if "V2_EOC_L2"   in data.dtype.names else float("nan")
+            v2l2 = float(row["V2_L2_error"]) if has_v2l2 else float("nan")
+            v2eo = float(row["V2_EOC_L2"])   if has_v2eo else float("nan")
             lines.append(f"    ${N_t}$ & ${dt:.4f}$ & "
                          f"{fmt_sci(v1l2)} & {fmt_eoc(v1eo)} & "
                          f"{fmt_sci(v2l2)} & {fmt_eoc(v2eo)} \\\\\n")

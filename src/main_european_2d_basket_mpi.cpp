@@ -14,7 +14,7 @@
  *   Row1: -(b*u, grad v) + (sigma, grad v) + (1/dt+r)*(u,v) + <sigma_hat,v>
  *   Row2: (u, div tau) + (A^{-1}*sigma, tau) + <u_hat, tau·n>
  *
- * Payoff: K*max(min(S1/K,S2/K)-1,0)  (call-on-min)
+ * Payoff: K*max(min(S1/K,S2/K)-1,0)  =  max(min(S1,S2)-K,0)  [call-on-minimum]
  *
  * BCs (u_hat in H1_Trace, negative convention following V2):
  *   left  (x1=x1_min): u_hat = 0
@@ -22,9 +22,30 @@
  *   right (x1=x1_max): u_hat = -bs_call(K*exp(x2), K, r, sigma2, tau)  [fn of x2]
  *   top   (x2=x2_max): u_hat = -bs_call(K*exp(x1), K, r, sigma1, tau)  [fn of x1]
  *
+ * CLI overrides (all optional; JSON config values used otherwise):
+ *   --rho R      Override correlation rho
+ *   --K   K      Override strike K
+ *   --N_x N      Override mesh x-refinement N_x
+ *   --N_y N      Override mesh y-refinement N_y
+ *   --N_t N      Override time steps N_t
+ *   --S1_0 S     S1 evaluation point (default: K)
+ *   --S2_0 S     S2 evaluation point (default: K)
+ *   --no-save-surface   Skip writing solution surface CSV (useful for convergence runs)
+ *
+ * Machine-readable stdout lines (for Python parsing):
+ *   PRICE_ATM=<val>      price at x1=x2=0 (S1=S2=K, regardless of S1_0/S2_0)
+ *   PRICE_AT_S0=<val>    price at x1=log(S1_0/K), x2=log(S2_0/K)
+ *   NDOF_TOTAL=<n>       total trial DOFs across all spaces
+ *   MIN_EIG_A=<val>      ellipticity constant (minimum eigenvalue of A)
+ *   ASSEMBLY_TIME=<s>    cumulative Gram assembly time (MPI_Wtime, rank 0)
+ *   SOLVE_TIME=<s>       cumulative CG solve time (MPI_Wtime, rank 0)
+ *   TOTAL_TIME=<s>       total time-loop wall time (MPI_Wtime, rank 0)
+ *
  * Starting template: /opt/mfem/miniapps/dpg/pconvection-diffusion.cpp
  * Build:  cd /workspace/build && make main_european_2d_basket_mpi -j4
- * Run:    mpirun -np 8 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json
+ * Run:    mpirun -np 4 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json
+ *         mpirun -np 4 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json \
+ *                       --rho 0.5 --N_x 32 --N_y 32 --N_t 500
  */
 
 #include "mfem.hpp"
@@ -37,7 +58,9 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -86,6 +109,13 @@ static std::string jsection(const std::string& j, const std::string& key) {
     return "";
 }
 
+// Format rho as a filename-safe string: 0.0 -> "0.0", -0.5 -> "-0.5"
+static std::string rho_str(double rho) {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(1) << rho;
+    return ss.str();
+}
+
 // ---------------------------------------------------------------------------
 // Black-Scholes formula helpers
 // ---------------------------------------------------------------------------
@@ -104,7 +134,7 @@ static double bs_call(double S, double K, double r, double sig, double tau) {
 // ---------------------------------------------------------------------------
 static double g_K, g_r, g_sigma1, g_sigma2, g_tau_cb;
 
-// Payoff: K*max(min(S1/K, S2/K)-1, 0) = K*max(min(exp(x1),exp(x2))-1, 0)
+// Payoff: max(min(S1,S2)-K,0) = K*max(min(exp(x1),exp(x2))-1,0)
 static double payoff_cb(const Vector& xv) {
     return g_K * std::max(std::min(std::exp(xv[0]), std::exp(xv[1])) - 1.0, 0.0);
 }
@@ -122,7 +152,6 @@ static double top_bc_cb(const Vector& xv) {
 
 // ---------------------------------------------------------------------------
 // Element-wise test norm coefficients (adjoint graph norm, element-local)
-// min_eig = minimum eigenvalue of A (ellipticity constant)
 // ---------------------------------------------------------------------------
 static void setup_test_norm_coeffs(ParGridFunction& c1_gf, ParGridFunction& c2_gf,
                                    double min_eig, double dt)
@@ -154,6 +183,16 @@ int main(int argc, char* argv[])
     const char* config_file = "config/european_2d_basket.json";
     int  extra_refine = 0;
     bool verbose      = false;
+    bool save_surface = true;
+
+    // CLI overrides (sentinel: NaN / -1 means "use config value")
+    double rho_ov  = std::numeric_limits<double>::quiet_NaN();
+    double K_ov    = std::numeric_limits<double>::quiet_NaN();
+    double S1_0_ov = std::numeric_limits<double>::quiet_NaN();
+    double S2_0_ov = std::numeric_limits<double>::quiet_NaN();
+    int    N_x_ov  = -1;
+    int    N_y_ov  = -1;
+    int    N_t_ov  = -1;
 
     OptionsParser args(argc, argv);
     args.AddOption(&config_file, "-c", "--config", "JSON config file");
@@ -161,6 +200,16 @@ int main(int argc, char* argv[])
                    "Additional uniform refinements (doubles N_x,N_y each time)");
     args.AddOption(&verbose, "-v", "--verbose", "-no-v", "--no-verbose",
                    "Print per-step CG info");
+    args.AddOption(&save_surface, "-ss", "--save-surface",
+                   "-no-ss", "--no-save-surface",
+                   "Write solution+delta surface CSV");
+    args.AddOption(&rho_ov,  "--rho",  "--rho",  "Override rho");
+    args.AddOption(&K_ov,    "--K",    "--K",    "Override strike K");
+    args.AddOption(&S1_0_ov, "--S1_0", "--S1_0", "S1 evaluation point (default: K)");
+    args.AddOption(&S2_0_ov, "--S2_0", "--S2_0", "S2 evaluation point (default: K)");
+    args.AddOption(&N_x_ov,  "--N_x",  "--N_x",  "Override N_x");
+    args.AddOption(&N_y_ov,  "--N_y",  "--N_y",  "Override N_y");
+    args.AddOption(&N_t_ov,  "--N_t",  "--N_t",  "Override N_t");
     args.Parse();
     if (!args.Good()) {
         if (myid == 0) args.PrintUsage(std::cout);
@@ -168,29 +217,40 @@ int main(int argc, char* argv[])
     }
 
     // ---- Load JSON ----
-    const std::string json = slurp(config_file);
-    const std::string j_dom  = jsection(json, "domain");
-    const std::string j_mesh = jsection(json, "mesh");
-    const std::string j_time = jsection(json, "time");
-    const std::string j_fem  = jsection(json, "fem");
+    const std::string json  = slurp(config_file);
+    const std::string j_dom = jsection(json, "domain");
+    const std::string j_mesh= jsection(json, "mesh");
+    const std::string j_time= jsection(json, "time");
+    const std::string j_fem = jsection(json, "fem");
 
-    const double sigma1 = jd(json, "sigma1", 0.2);
-    const double sigma2 = jd(json, "sigma2", 0.2);
-    const double rho    = jd(json, "rho",    0.0);
-    const double r      = jd(json, "r",      0.05);
-    const double T      = jd(json, "T",      1.0);
-    const double K      = jd(json, "K",      100.0);
+    double sigma1 = jd(json, "sigma1", 0.2);
+    double sigma2 = jd(json, "sigma2", 0.2);
+    double rho    = jd(json, "rho",    0.0);
+    double r      = jd(json, "r",      0.05);
+    double T      = jd(json, "T",      1.0);
+    double K      = jd(json, "K",      100.0);
 
     const double x1_min = jd(j_dom, "x1_min", -3.0);
     const double x1_max = jd(j_dom, "x1_max",  3.0);
     const double x2_min = jd(j_dom, "x2_min", -3.0);
     const double x2_max = jd(j_dom, "x2_max",  3.0);
 
-    int N_x = ji(j_mesh, "N_x",   16);
-    int N_y = ji(j_mesh, "N_y",   16);
-    int N_t = ji(j_time, "N_t",  100);
-    int p       = ji(j_fem, "p",       2);
-    int delta_p = ji(j_fem, "delta_p", 1);
+    int N_x     = ji(j_mesh, "N_x",   16);
+    int N_y     = ji(j_mesh, "N_y",   16);
+    int N_t     = ji(j_time, "N_t",  100);
+    int p       = ji(j_fem,  "p",       2);
+    int delta_p = ji(j_fem,  "delta_p", 1);
+
+    // Apply CLI overrides
+    if (!std::isnan(rho_ov)) rho = rho_ov;
+    if (!std::isnan(K_ov))   K   = K_ov;
+    if (N_x_ov > 0) N_x = N_x_ov;
+    if (N_y_ov > 0) N_y = N_y_ov;
+    if (N_t_ov > 0) N_t = N_t_ov;
+
+    // Evaluation point for PRICE_AT_S0
+    double S1_0 = std::isnan(S1_0_ov) ? K : S1_0_ov;
+    double S2_0 = std::isnan(S2_0_ov) ? K : S2_0_ov;
 
     MFEM_VERIFY(std::abs(rho) < 1.0 - 1e-10,
                 "V4: |rho| must be < 1 for A to be positive definite");
@@ -198,12 +258,12 @@ int main(int argc, char* argv[])
     N_x <<= extra_refine;
     N_y <<= extra_refine;
 
-    // Critical invariants (MUST be MINUS, not plus)
     const double b1 = r - 0.5 * sigma1 * sigma1;
     const double b2 = r - 0.5 * sigma2 * sigma2;
     const double dt = T / N_t;
+    const double min_eig = MinEigenvalueA(sigma1, sigma2, rho);
 
-    g_K = K;  g_r = r;  g_sigma1 = sigma1;  g_sigma2 = sigma2;  g_tau_cb = 0.0;
+    g_K = K; g_r = r; g_sigma1 = sigma1; g_sigma2 = sigma2; g_tau_cb = 0.0;
 
     const double Lx1 = x1_max - x1_min;
     const double Lx2 = x2_max - x2_min;
@@ -215,16 +275,15 @@ int main(int argc, char* argv[])
                   << "  sigma1=" << sigma1 << " sigma2=" << sigma2
                   << " rho=" << rho << " r=" << r << " T=" << T << " K=" << K << "\n"
                   << "  b1=" << b1 << " b2=" << b2 << "\n"
-                  << "  MinEigA=" << MinEigenvalueA(sigma1, sigma2, rho) << "\n"
+                  << "  MinEigA=" << min_eig << "\n"
                   << "  Mesh: " << N_x << "x" << N_y
                   << "  hx=" << hx << " hy=" << hy
                   << "  N_t=" << N_t << " dt=" << dt << "\n"
-                  << "  FEM: p=" << p << " delta_p=" << delta_p << "\n\n";
+                  << "  FEM: p=" << p << " delta_p=" << delta_p << "\n"
+                  << "  Eval point: S1_0=" << S1_0 << " S2_0=" << S2_0 << "\n\n";
     }
 
-    // ---- Build true 2D quad mesh, shift to [x1_min,x1_max]×[x2_min,x2_max] ----
-    // MakeCartesian2D boundary attrs: 1=bottom(y=0), 2=right(x=Lx1),
-    //                                 3=top(y=Lx2),  4=left(x=0)
+    // ---- Build 2D quad mesh ----
     Mesh mesh = Mesh::MakeCartesian2D(N_x, N_y, Element::QUADRILATERAL,
                                       true, Lx1, Lx2);
     for (int i = 0; i < mesh.GetNV(); i++) {
@@ -236,7 +295,7 @@ int main(int argc, char* argv[])
     ParMesh pmesh(MPI_COMM_WORLD, mesh);
     mesh.Clear();
 
-    const int dim = pmesh.Dimension();  // 2
+    const int dim = pmesh.Dimension();
 
     // ---- FE spaces ----
     enum TrialSpace { u_space = 0, sigma_space = 1, hatu_space = 2, hatf_space = 3 };
@@ -256,23 +315,26 @@ int main(int argc, char* argv[])
     FiniteElementCollection* v_fec   = new H1_FECollection(test_order, dim);
     FiniteElementCollection* tau_fec = new RT_FECollection(test_order - 1, dim);
 
+    const long long ndof_total = u_fes->GlobalTrueVSize()
+                               + sigma_fes->GlobalTrueVSize()
+                               + hatu_fes->GlobalTrueVSize()
+                               + hatf_fes->GlobalTrueVSize();
+
     if (myid == 0) {
         std::cout << "Trial DOFs: u=" << u_fes->GlobalTrueVSize()
                   << " sigma=" << sigma_fes->GlobalTrueVSize()
                   << " hatu=" << hatu_fes->GlobalTrueVSize()
-                  << " hatf=" << hatf_fes->GlobalTrueVSize() << "\n\n";
+                  << " hatf=" << hatf_fes->GlobalTrueVSize()
+                  << " total=" << ndof_total << "\n\n";
     }
 
     // ---- Coefficients ----
-    // 2D diffusion tensor A and its inverse (from BSCoefficients2D.hpp)
     BSDiffusion2D        A_coeff(sigma1, sigma2, rho);
     BSDiffusionInverse2D Ainv_coeff(sigma1, sigma2, rho);
 
-    // Convection beta for MixedScalarWeakDivergenceIntegrator: needs -b (negated)
-    // The integrator computes -(u, betacoeff·∇v), so betacoeff=[-b1,-b2] gives -(b·∇u,v). ✓
     Vector neg_b_vec(dim); neg_b_vec[0] = -b1; neg_b_vec[1] = -b2;
     VectorConstantCoefficient betacoeff(neg_b_vec);
-    OuterProductCoefficient   bbt_coeff(betacoeff, betacoeff);  // b⊗b for test norm
+    OuterProductCoefficient   bbt_coeff(betacoeff, betacoeff);
 
     ConstantCoefficient one(1.0);
     ConstantCoefficient negone(-1.0);
@@ -283,68 +345,50 @@ int main(int argc, char* argv[])
     // ---- DPG weak form ----
     Array<ParFiniteElementSpace*>   trial_fes;
     Array<FiniteElementCollection*> test_fec;
-
-    trial_fes.Append(u_fes);
-    trial_fes.Append(sigma_fes);
-    trial_fes.Append(hatu_fes);
-    trial_fes.Append(hatf_fes);
-    test_fec.Append(v_fec);
-    test_fec.Append(tau_fec);
+    trial_fes.Append(u_fes);    trial_fes.Append(sigma_fes);
+    trial_fes.Append(hatu_fes); trial_fes.Append(hatf_fes);
+    test_fec.Append(v_fec);     test_fec.Append(tau_fec);
 
     ParDPGWeakForm* a = new ParDPGWeakForm(trial_fes, test_fec);
     a->StoreMatrices(true);
 
-    // Row1 (test v ∈ H1):
-    //   -(b·u, ∇v)           : MixedScalarWeakDivergenceIntegrator([-b1,-b2])
+    // Row1 (test v ∈ H1)
     a->AddTrialIntegrator(new MixedScalarWeakDivergenceIntegrator(betacoeff),
                           TrialSpace::u_space, TestSpace::v_space);
-    //   (sigma, ∇v)           : TransposeIntegrator(GradientIntegrator)
     a->AddTrialIntegrator(new TransposeIntegrator(new GradientIntegrator(one)),
                           TrialSpace::sigma_space, TestSpace::v_space);
-    //   (1/dt+r)*(u,v)        : MixedScalarMassIntegrator(reaction_c)
     a->AddTrialIntegrator(new MixedScalarMassIntegrator(reaction_c),
                           TrialSpace::u_space, TestSpace::v_space);
-    //   <sigma_hat, v>        : TraceIntegrator
     a->AddTrialIntegrator(new TraceIntegrator,
                           TrialSpace::hatf_space, TestSpace::v_space);
-
-    // Row2 (test tau ∈ H(div)):
-    //   (u, ∇·tau)            : MixedScalarWeakGradientIntegrator(-1)
+    // Row2 (test tau ∈ H(div))
     a->AddTrialIntegrator(new MixedScalarWeakGradientIntegrator(negone),
                           TrialSpace::u_space, TestSpace::tau_space);
-    //   (A^{-1}*sigma, tau)   : TransposeIntegrator(VectorFEMassIntegrator(Ainv))
     a->AddTrialIntegrator(new TransposeIntegrator(new VectorFEMassIntegrator(Ainv_coeff)),
                           TrialSpace::sigma_space, TestSpace::tau_space);
-    //   <u_hat, tau·n>        : NormalTraceIntegrator
     a->AddTrialIntegrator(new NormalTraceIntegrator,
                           TrialSpace::hatu_space, TestSpace::tau_space);
 
-    // ---- Test norm (adjoint graph norm, element-local) ----
+    // ---- Test norm ----
     FiniteElementCollection* coeff_fec = new L2_FECollection(0, dim);
     ParFiniteElementSpace*   coeff_fes = new ParFiniteElementSpace(&pmesh, coeff_fec);
-
     ParGridFunction c1_gf, c2_gf;
-    c1_gf.SetSpace(coeff_fes);
-    c2_gf.SetSpace(coeff_fes);
-    setup_test_norm_coeffs(c1_gf, c2_gf, MinEigenvalueA(sigma1, sigma2, rho), dt);
+    c1_gf.SetSpace(coeff_fes); c2_gf.SetSpace(coeff_fes);
+    setup_test_norm_coeffs(c1_gf, c2_gf, min_eig, dt);
+    GridFunctionCoefficient c1_coeff(&c1_gf), c2_coeff(&c2_gf);
 
-    GridFunctionCoefficient c1_coeff(&c1_gf);
-    GridFunctionCoefficient c2_coeff(&c2_gf);
-
-    // v block: c1*(v,v) + (A∇v,∇v) + (b⊗b:∇v,∇v)
     a->AddTestIntegrator(new MassIntegrator(c1_coeff),
                          TestSpace::v_space, TestSpace::v_space);
     a->AddTestIntegrator(new DiffusionIntegrator(A_coeff),
                          TestSpace::v_space, TestSpace::v_space);
     a->AddTestIntegrator(new DiffusionIntegrator(bbt_coeff),
                          TestSpace::v_space, TestSpace::v_space);
-    // tau block: c2*(tau,tau) + (∇·tau,∇·tau)
     a->AddTestIntegrator(new VectorFEMassIntegrator(c2_coeff),
                          TestSpace::tau_space, TestSpace::tau_space);
     a->AddTestIntegrator(new DivDivIntegrator(one),
                          TestSpace::tau_space, TestSpace::tau_space);
 
-    // ---- Initial condition (payoff at tau=0) ----
+    // ---- Initial condition ----
     ParGridFunction u_prev_gf(u_fes);
     FunctionCoefficient payoff_fc(payoff_cb);
     u_prev_gf.ProjectCoefficient(payoff_fc);
@@ -357,68 +401,62 @@ int main(int argc, char* argv[])
     offsets[3] = hatu_fes->GetVSize();
     offsets[4] = hatf_fes->GetVSize();
     offsets.PartialSum();
-
     BlockVector x(offsets);
     x = 0.0;
 
     // ---- Boundary attribute arrays ----
-    // MakeCartesian2D attrs: 1=bottom, 2=right, 3=top, 4=left
     const int nba = pmesh.bdr_attributes.Max();
-    Array<int> bottom_bdr(nba); bottom_bdr = 0; bottom_bdr[0] = 1;  // attr=1
-    Array<int> right_bdr (nba); right_bdr  = 0; right_bdr [1] = 1;  // attr=2
-    Array<int> top_bdr   (nba); top_bdr    = 0; top_bdr   [2] = 1;  // attr=3
-    Array<int> left_bdr  (nba); left_bdr   = 0; left_bdr  [3] = 1;  // attr=4
+    Array<int> bottom_bdr(nba); bottom_bdr = 0; bottom_bdr[0] = 1;
+    Array<int> right_bdr (nba); right_bdr  = 0; right_bdr [1] = 1;
+    Array<int> top_bdr   (nba); top_bdr    = 0; top_bdr   [2] = 1;
+    Array<int> left_bdr  (nba); left_bdr   = 0; left_bdr  [3] = 1;
+    Array<int> ess_bdr_uhat(nba); ess_bdr_uhat = 1;
 
-    Array<int> ess_bdr_uhat(nba);
-    ess_bdr_uhat = 1;  // all 4 sides essential for u_hat
-
-    // ---- RHS coefficient (updated by reference to u_prev_gf each step) ----
+    // ---- RHS ----
     GridFunctionCoefficient u_prev_coeff(&u_prev_gf);
     ConstantCoefficient     dtinv_c(1.0 / dt);
     ProductCoefficient      rhs_coeff(dtinv_c, u_prev_coeff);
-
     a->AddDomainLFIntegrator(new DomainLFIntegrator(rhs_coeff), TestSpace::v_space);
 
-    // ---- Time loop (backward Euler: tau = T-t, tau_n1 = (step+1)*dt) ----
+    // ---- Time loop ----
     if (myid == 0)
         std::cout << "Time loop: " << N_t << " steps...\n";
+
+    double t_assemble = 0.0, t_solve = 0.0;
+    double t_loop_start = MPI_Wtime();
 
     for (int step = 0; step < N_t; step++) {
         const double tau_n1 = (step + 1) * dt;
         g_tau_cb = tau_n1;
 
+        double ta = MPI_Wtime();
         a->Assemble();
+        t_assemble += MPI_Wtime() - ta;
 
-        // Apply essential BCs on u_hat block
+        // Apply essential BCs on u_hat
         ParGridFunction hatu_gf;
         hatu_gf.MakeRef(hatu_fes, x.GetBlock(TrialSpace::hatu_space), 0);
-
-        ConstantCoefficient     zero_bc(0.0);
-        FunctionCoefficient     right_bc_fc(right_bc_cb);
-        FunctionCoefficient     top_bc_fc(top_bc_cb);
-
+        ConstantCoefficient zero_bc(0.0);
+        FunctionCoefficient right_bc_fc(right_bc_cb);
+        FunctionCoefficient top_bc_fc(top_bc_cb);
         hatu_gf.ProjectBdrCoefficient(zero_bc,    left_bdr);
         hatu_gf.ProjectBdrCoefficient(zero_bc,    bottom_bdr);
         hatu_gf.ProjectBdrCoefficient(right_bc_fc, right_bdr);
         hatu_gf.ProjectBdrCoefficient(top_bc_fc,   top_bdr);
 
-        // Offset essential DOFs into global block system
         Array<int> ess_tdof_list_uhat;
         hatu_fes->GetEssentialTrueDofs(ess_bdr_uhat, ess_tdof_list_uhat);
-
         const int n      = ess_tdof_list_uhat.Size();
         const int offset = u_fes->GetTrueVSize() + sigma_fes->GetTrueVSize();
         Array<int> ess_tdof_list(n);
         for (int j = 0; j < n; j++)
             ess_tdof_list[j] = ess_tdof_list_uhat[j] + offset;
 
-        // Form and solve linear system
         OperatorPtr Ah;
         Vector X, B;
         a->FormLinearSystem(ess_tdof_list, x, Ah, X, B);
 
         BlockOperator* A = Ah.As<BlockOperator>();
-
         BlockDiagonalPreconditioner M(A->RowOffsets());
         M.owns_blocks = 1;
 
@@ -428,20 +466,17 @@ int main(int argc, char* argv[])
         HypreAMS*       ams3 = new HypreAMS((HypreParMatrix&)A->GetBlock(3,3), hatf_fes);
         amg0->SetPrintLevel(0); amg1->SetPrintLevel(0);
         amg2->SetPrintLevel(0); ams3->SetPrintLevel(0);
-
-        M.SetDiagonalBlock(0, amg0);
-        M.SetDiagonalBlock(1, amg1);
-        M.SetDiagonalBlock(2, amg2);
-        M.SetDiagonalBlock(3, ams3);
+        M.SetDiagonalBlock(0, amg0); M.SetDiagonalBlock(1, amg1);
+        M.SetDiagonalBlock(2, amg2); M.SetDiagonalBlock(3, ams3);
 
         CGSolver cg(MPI_COMM_WORLD);
-        cg.SetRelTol(1e-10);
-        cg.SetAbsTol(1e-14);
-        cg.SetMaxIter(2000);
-        cg.SetPrintLevel(0);
-        cg.SetPreconditioner(M);
-        cg.SetOperator(*A);
+        cg.SetRelTol(1e-10); cg.SetAbsTol(1e-14);
+        cg.SetMaxIter(2000); cg.SetPrintLevel(0);
+        cg.SetPreconditioner(M); cg.SetOperator(*A);
+
+        double ts = MPI_Wtime();
         cg.Mult(B, X);
+        t_solve += MPI_Wtime() - ts;
 
         a->RecoverFEMSolution(X, x);
 
@@ -454,6 +489,8 @@ int main(int argc, char* argv[])
                       << " CG_iters=" << cg.GetNumIterations() << "\n";
     }
 
+    double t_total = MPI_Wtime() - t_loop_start;
+
     // ---- Extract solution and delta surfaces (all MPI ranks) ----
     {
         ParGridFunction sigma_final_gf;
@@ -461,7 +498,6 @@ int main(int argc, char* argv[])
         ParGridFunction u_final_gf;
         u_final_gf.MakeRef(u_fes, x.GetBlock(TrialSpace::u_space), 0);
 
-        // Per-element centre data (local)
         std::vector<double> lx1, lx2, lS1, lS2, lu, ld1, ld2;
 
         const int ne = pmesh.GetNE();
@@ -476,19 +512,15 @@ int main(int argc, char* argv[])
 
             IntegrationPoint ip;
             ip.Set2(ip_c.x, ip_c.y);
+            const double u_val  = u_final_gf.GetValue(i, ip);
+            const double s1_val = sigma_final_gf.GetValue(i, ip, 1);
+            const double s2_val = sigma_final_gf.GetValue(i, ip, 2);
 
-            const double u_val = u_final_gf.GetValue(i, ip);
-
-            // sigma = A*grad(u); delta_i = (A^{-1}*sigma)_i / (K*exp(x_i))
-            const double s1_val = sigma_final_gf.GetValue(i, ip, 1);  // x1 component
-            const double s2_val = sigma_final_gf.GetValue(i, ip, 2);  // x2 component
-
-            // grad(u) = A^{-1} * sigma  (A^{-1} is symmetric: i00,i01,i11)
+            // grad(u) = A^{-1}*sigma
             const double grad_u1 = Ainv_coeff.i00()*s1_val + Ainv_coeff.i01()*s2_val;
             const double grad_u2 = Ainv_coeff.i01()*s1_val + Ainv_coeff.i11()*s2_val;
-
-            const double delta1 = grad_u1 / (K * std::exp(x1_c));
-            const double delta2 = grad_u2 / (K * std::exp(x2_c));
+            const double delta1  = grad_u1 / (K * std::exp(x1_c));
+            const double delta2  = grad_u2 / (K * std::exp(x2_c));
 
             lx1.push_back(x1_c); lx2.push_back(x2_c);
             lS1.push_back(K * std::exp(x1_c));
@@ -515,70 +547,108 @@ int main(int argc, char* argv[])
         gv(lu,  au);  gv(ld1, ad1); gv(ld2, ad2);
 
         if (myid == 0) {
-            // Sort by (x1, x2) for tidy CSV output
+            // Sort by (x1, x2)
             std::vector<int> idx(total_n);
             std::iota(idx.begin(), idx.end(), 0);
             std::sort(idx.begin(), idx.end(), [&](int a, int b) {
                 return (ax1[a] < ax1[b]) || (ax1[a] == ax1[b] && ax2[a] < ax2[b]);
             });
 
+            // Average all elements equidistant from the target (handles even N_x where
+            // the target point falls at an element corner, equidistant from 4 elements).
+            auto nearest_avg = [&](double tx1, double tx2) -> double {
+                double min_d = 1e30;
+                for (int i = 0; i < total_n; i++) {
+                    double d = std::hypot(ax1[i]-tx1, ax2[i]-tx2);
+                    if (d < min_d - 1e-10) min_d = d;
+                }
+                double sum = 0.0; int cnt = 0;
+                for (int i = 0; i < total_n; i++) {
+                    if (std::hypot(ax1[i]-tx1, ax2[i]-tx2) < min_d + 1e-8)
+                        { sum += au[i]; cnt++; }
+                }
+                return sum / std::max(cnt, 1);
+            };
+
+            double price_atm   = nearest_avg(0.0, 0.0);
+            double price_at_s0 = nearest_avg(std::log(S1_0/K), std::log(S2_0/K));
+
+            // Machine-readable summary
+            std::cout << std::scientific << std::setprecision(10)
+                      << "\nPRICE_ATM="    << price_atm   << "\n"
+                      << "PRICE_AT_S0="  << price_at_s0 << "\n"
+                      << "NDOF_TOTAL="   << ndof_total  << "\n"
+                      << "MIN_EIG_A="    << min_eig     << "\n"
+                      << "ASSEMBLY_TIME="<< t_assemble  << "\n"
+                      << "SOLVE_TIME="   << t_solve     << "\n"
+                      << "TOTAL_TIME="   << t_total     << "\n";
+
             std::filesystem::create_directories("results/solutions");
             std::filesystem::create_directories("results/greeks");
 
-            // Price surface
-            {
-                std::ofstream fout("results/solutions/v4_basket_surface.csv");
-                fout << "x1,x2,S1,S2,u_DPG\n" << std::setprecision(10);
-                for (int i : idx)
-                    fout << ax1[i] << "," << ax2[i] << ","
-                         << aS1[i] << "," << aS2[i] << "," << au[i] << "\n";
-                std::cout << "Solution surface: results/solutions/v4_basket_surface.csv"
-                          << " (" << total_n << " points)\n";
+            if (save_surface) {
+                // Combined surface + delta CSV (named by rho)
+                const std::string surf_path =
+                    "results/solutions/v4_basket_surface_rho" + rho_str(rho) + ".csv";
+                {
+                    std::ofstream fout(surf_path);
+                    fout << "# V4 2D basket call-on-min — rho=" << rho << "\n"
+                         << "# K=" << K << " T=" << T << " r=" << r
+                         << " sigma1=" << sigma1 << " sigma2=" << sigma2 << "\n"
+                         << "# N_x=" << N_x << " N_y=" << N_y
+                         << " N_t=" << N_t << " p=" << p << " delta_p=" << delta_p << "\n";
+                    fout << "x1,x2,S1,S2,u_DPG,delta1,delta2\n"
+                         << std::setprecision(10);
+                    for (int i : idx)
+                        fout << ax1[i] << "," << ax2[i] << ","
+                             << aS1[i] << "," << aS2[i] << ","
+                             << au[i]  << "," << ad1[i] << "," << ad2[i] << "\n";
+                    std::cout << "Surface+Delta: " << surf_path
+                              << " (" << total_n << " points)\n";
+                }
+                // Backward-compat delta-only CSV
+                {
+                    std::ofstream fout("results/greeks/v4_delta1_surface.csv");
+                    fout << "x1,x2,S1,S2,delta1,delta2\n" << std::setprecision(10);
+                    for (int i : idx)
+                        fout << ax1[i] << "," << ax2[i] << ","
+                             << aS1[i] << "," << aS2[i] << ","
+                             << ad1[i] << "," << ad2[i] << "\n";
+                }
             }
-            // Delta surface
+
+            // Convergence row (append)
             {
-                std::ofstream fout("results/greeks/v4_delta1_surface.csv");
-                fout << "x1,x2,S1,S2,delta1,delta2\n" << std::setprecision(10);
-                for (int i : idx)
-                    fout << ax1[i] << "," << ax2[i] << ","
-                         << aS1[i] << "," << aS2[i] << ","
-                         << ad1[i] << "," << ad2[i] << "\n";
-                std::cout << "Delta surface:    results/greeks/v4_delta1_surface.csv"
-                          << " (" << total_n << " points)\n";
+                std::filesystem::create_directories("results/convergence");
+                const char* conv_csv = "results/convergence/v4_spatial_basket.csv";
+                std::ifstream chk(conv_csv);
+                bool new_file = !chk.is_open();
+                if (!new_file) { chk.seekg(0, std::ios::end); new_file = (chk.tellg() == 0); }
+                chk.close();
+
+                std::ofstream fcsv(conv_csv, std::ios::app);
+                if (new_file)
+                    fcsv << "N_x,N_y,hx,hy,ndof_total,price_atm,price_at_s0,rho,S1_0,S2_0\n";
+                fcsv << std::setprecision(10)
+                     << N_x << "," << N_y << ","
+                     << hx  << "," << hy  << ","
+                     << ndof_total << ","
+                     << price_atm  << ","
+                     << price_at_s0 << ","
+                     << rho << ","
+                     << S1_0 << "," << S2_0 << "\n";
             }
         }
     }
 
-    // ---- Write convergence row ----
-    if (myid == 0) {
-        std::filesystem::create_directories("results/convergence");
-        const char* csv = "results/convergence/v4_spatial_basket.csv";
-        std::ifstream chk(csv);
-        bool new_file = !chk.is_open();
-        if (!new_file) { chk.seekg(0, std::ios::end); new_file = (chk.tellg() == 0); }
-        chk.close();
-
-        std::ofstream fcsv(csv, std::ios::app);
-        if (new_file)
-            fcsv << "N_x,N_y,hx,hy,ndof_u,L2_norm_u,rho\n";
-        fcsv << std::setprecision(10)
-             << N_x << "," << N_y << ","
-             << hx  << "," << hy  << ","
-             << u_fes->GlobalTrueVSize() << ","
-             << u_prev_gf.Norml2() << ","
-             << rho << "\n";
-    }
-
     // ---- Cleanup ----
     delete a;
-    delete coeff_fes;
-    delete coeff_fec;
-    delete tau_fec;
-    delete v_fec;
-    delete hatf_fes; delete hatf_fec;
-    delete hatu_fes; delete hatu_fec;
+    delete coeff_fes; delete coeff_fec;
+    delete tau_fec;   delete v_fec;
+    delete hatf_fes;  delete hatf_fec;
+    delete hatu_fes;  delete hatu_fec;
     delete sigma_fes; delete sigma_fec;
-    delete u_fes;    delete u_fec;
+    delete u_fes;     delete u_fec;
 
     return 0;
 }

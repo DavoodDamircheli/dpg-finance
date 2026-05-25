@@ -1,0 +1,152 @@
+% --- Table A1 ---
+\begin{table}[htbp]
+  \centering
+  \caption{V1 primal DPG spatial convergence. Fixed $N_t=5000$, $p=1$, $\sigma=0.2$, $r=0.05$, $T=1$, $K=100$.}
+  \label{tab:v1_spatial}
+  \begin{tabular}{rcccccc}
+    \hline
+    $N_x$ & $h$ & ndof & Price (ATM) & $\|e\|_{L^2}$ & EOC \\
+    \hline
+    $8$ & $0.7500$ & $9$ & $6.80761$ & $6.97\times10^{1}$ & -- \\
+    $16$ & $0.3750$ & $17$ & $9.03767$ & $1.79\times10^{1}$ & $1.97$ \\
+    $32$ & $0.1875$ & $33$ & $10.14354$ & $4.49\times10^{0}$ & $1.99$ \\
+    $64$ & $0.0938$ & $65$ & $10.37753$ & $1.12\times10^{0}$ & $2.00$ \\
+    $128$ & $0.0469$ & $129$ & $10.43235$ & $2.81\times10^{-1}$ & $2.00$ \\
+    \hline
+  \end{tabular}
+\end{table}
+
+% --- Table A2 ---
+\begin{table}[htbp]
+  \centering
+  \caption{V2 ultraweak DPG (MPI) spatial convergence. Fixed $N_t=5000$, $p=2$, $\delta_p=1$.}
+  \label{tab:v2_spatial}
+  \begin{tabular}{rccccc}
+    \hline
+    $N_x$ & $h$ & total DOF & Price (ATM) & $\|e\|_{L^2}$ & EOC \\
+    \hline
+    $4$ & $1.5000$ & $97$ & $66.92467$ & $1.35\times10^{2}$ & -- \\
+    $8$ & $0.7500$ & $189$ & $28.07463$ & $2.54\times10^{1}$ & $2.41$ \\
+    $16$ & $0.3750$ & $373$ & $15.84402$ & $5.38\times10^{0}$ & $2.24$ \\
+    $32$ & $0.1875$ & $741$ & $11.94657$ & $1.44\times10^{0}$ & $1.90$ \\
+    \hline
+  \end{tabular}
+\end{table}
+
+% --- Table A3 ---
+\begin{table}[htbp]
+  \centering
+  \caption{European call temporal convergence (backward Euler). V1: $N_x=256$. V2: $N_x=64$.}
+  \label{tab:temporal}
+  \begin{tabular}{rccccc}
+    \hline
+    $N_t$ & $\Delta t$ & V1 $\|e\|_{L^2}$ & V1 EOC & V2 $\|e\|_{L^2}$ & V2 EOC \\
+    \hline
+    $25$ & $0.0400$ & $6.86\times10^{-2}$ & -- & $1.61\times10^{-1}$ & -- \\
+    $50$ & $0.0200$ & $6.83\times10^{-2}$ & $0.00$ & $1.75\times10^{-1}$ & $-0.12$ \\
+    $100$ & $0.0100$ & $6.90\times10^{-2}$ & $-0.01$ & $2.06\times10^{-1}$ & $-0.24$ \\
+    $200$ & $0.0050$ & $6.96\times10^{-2}$ & $-0.01$ & $2.43\times10^{-1}$ & $-0.24$ \\
+    $400$ & $0.0025$ & $6.99\times10^{-2}$ & $-0.01$ & $2.73\times10^{-1}$ & $-0.17$ \\
+    $800$ & $0.0013$ & $7.01\times10^{-2}$ & $-0.00$ & $2.94\times10^{-1}$ & $-0.11$ \\
+    \hline
+  \end{tabular}
+\end{table}
+
+% ============================================================
+% Table B: European Greeks error (V2 ultraweak DPG, sigma=0.20, N_t=1000)
+% Chain rule: Delta=dV/dS=vartheta/S, Gamma=d2V/dS2 (FD approx)
+% ============================================================
+\newcommand{\tableEuropeanGreeks}{%
+\begin{table}[ht]
+\centering
+\caption{European call Greeks convergence: ultraweak DPG ($p=2$, $\sigma=0.20$,
+         $r=0.05$, $T=1$, $K=100$, $N_t=1000$).
+         $\Delta_{\rm DPG}=\vartheta/S$ (primary trial field);
+         $\Gamma_{\rm DPG}$ by centred FD of $\Delta$ in $S$.
+         EOC computed as $\log_2(\text{err}_{i-1}/\text{err}_i)$.}
+\label{tab:european_greeks}
+\begin{tabular}{r r | r r r | r r r}
+\hline
+$N_x$ & $h$ &
+$\|e_u\|_{L^2}$ & $\|e_\Delta\|_{L^2}$ (EOC) & $\|e_\Gamma\|_{L^2}$ (EOC) &
+$\|e_u\|_{L^\infty}$ & $\|e_\Delta\|_{L^\infty}$ & $\|e_\Gamma\|_{L^\infty}$ \\
+\hline
+        64 & 0.0938 & 3.00e-01 & 1.97e-03 (—) & 5.23e-02 (—) & 2.83e+00 & 3.63e-03 & 8.72e-02 \\
+        128 & 0.0469 & 7.76e-02 & 5.63e-04 (1.81) & 5.21e-02 (0.01) & 8.83e-01 & 1.02e-03 & 8.75e-02 \\
+        256 & 0.0234 & 1.53e-02 & 4.42e-04 (0.35) & 5.20e-02 (0.00) & 2.27e-01 & 8.32e-04 & 8.73e-02 \\
+\hline
+\end{tabular}
+\end{table}
+}% end \tableEuropeanGreeks
+
+% ============================================================
+% tableAsianBenchmarkRlow: Asian call benchmark ($r=0.09$)
+% ============================================================
+\newcommand{\tableAsianBenchmarkRlow}{%
+\begin{table}[ht]
+\centering
+\caption{Arithmetic average Asian call option prices ($r=0.09$, $T=1$, $S_0=100$,
+         $z_\min=-2$, $z_\max=2$, $N_z=200$, $N_t=400$, $p=1$).
+         Benchmark: Monte Carlo (500\,000 paths, 500 steps).
+         Primal DPG: H1($p=1$) Rogers-Shi reduction.}
+\label{tab:asian_r009}
+\begin{tabular}{r r | r r | r r}
+\hline
+$\sigma$ & $K$ &
+Benchmark & Primal DPG & $|\text{err}|$ & rel.\,err. \\
+\hline
+        0.05 & 95 & 8.82183 & 8.92108 & 0.09925 & 1.13\% \\
+        0.05 & 100 & 4.32066 & 4.93464 & 0.61398 & 14.21\% \\
+        0.05 & 105 & 0.96460 & 2.13408 & 1.16948 & 121.24\% \\
+        \hline
+        0.10 & 95 & 8.92859 & 9.15866 & 0.23007 & 2.58\% \\
+        0.10 & 100 & 4.92833 & 5.48342 & 0.55509 & 11.26\% \\
+        0.10 & 105 & 2.07896 & 2.83957 & 0.76062 & 36.59\% \\
+        \hline
+        0.20 & 95 & 10.01550 & 10.27264 & 0.25714 & 2.57\% \\
+        0.20 & 100 & 6.79268 & 7.14365 & 0.35097 & 5.17\% \\
+        0.20 & 105 & 4.31035 & 4.72660 & 0.41625 & 9.66\% \\
+        \hline
+        0.30 & 95 & 11.67771 & 11.87806 & 0.20036 & 1.72\% \\
+        0.30 & 100 & 8.84880 & 9.08581 & 0.23701 & 2.68\% \\
+        0.30 & 105 & 6.53647 & 6.81023 & 0.27376 & 4.19\% \\
+        \hline
+\end{tabular}
+\end{table}
+}% end \tableAsianBenchmarkRlow
+
+% ============================================================
+% tableAsianBenchmarkRhigh: Asian call benchmark ($r=0.15$)
+% ============================================================
+\newcommand{\tableAsianBenchmarkRhigh}{%
+\begin{table}[ht]
+\centering
+\caption{Arithmetic average Asian call option prices ($r=0.15$, $T=1$, $S_0=100$,
+         $z_\min=-2$, $z_\max=2$, $N_z=200$, $N_t=400$, $p=1$).
+         Benchmark: Monte Carlo (500\,000 paths, 500 steps).
+         Primal DPG: H1($p=1$) Rogers-Shi reduction.}
+\label{tab:asian_r015}
+\begin{tabular}{r r | r r | r r}
+\hline
+$\sigma$ & $K$ &
+Benchmark & Primal DPG & $|\text{err}|$ & rel.\,err. \\
+\hline
+        0.05 & 95 & 11.11233 & 11.11410 & 0.00177 & 0.02\% \\
+        0.05 & 100 & 6.81245 & 7.04446 & 0.23201 & 3.41\% \\
+        0.05 & 105 & 2.75934 & 3.69457 & 0.93524 & 33.89\% \\
+        \hline
+        0.10 & 95 & 11.14143 & 11.22785 & 0.08641 & 0.78\% \\
+        0.10 & 100 & 7.04800 & 7.39679 & 0.34878 & 4.95\% \\
+        0.10 & 105 & 3.62709 & 4.31225 & 0.68515 & 18.89\% \\
+        \hline
+        0.20 & 95 & 11.81965 & 12.00218 & 0.18253 & 1.54\% \\
+        0.20 & 100 & 8.43029 & 8.72126 & 0.29097 & 3.45\% \\
+        0.20 & 105 & 5.65969 & 6.05106 & 0.39137 & 6.92\% \\
+        \hline
+        0.30 & 95 & 13.17442 & 13.33604 & 0.16162 & 1.23\% \\
+        0.30 & 100 & 10.23355 & 10.44290 & 0.20935 & 2.05\% \\
+        0.30 & 105 & 7.76123 & 8.01818 & 0.25695 & 3.31\% \\
+        \hline
+\end{tabular}
+\end{table}
+}% end \tableAsianBenchmarkRhigh

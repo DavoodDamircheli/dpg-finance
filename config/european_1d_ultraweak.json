@@ -20,9 +20,9 @@
         "scheme": "backward_euler"
     },
     "fem": {
-        "p": 1,
-        "delta_p": 2,
-        "_comment": "trial space order p, enriched test space order p+delta_p"
+        "p": 2,
+        "delta_p": 1,
+        "_comment": "L2(p-1)=L2(1) trial; O(h^2) spatial convergence; delta via sigma=diff*grad(u)"
     },
     "solver": {
         "type": "pcg",
