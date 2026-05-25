@@ -24,11 +24,16 @@
  * Price recovery: Price = S0 * U(T, z0)  where z0 = K/S0
  * Asian Delta:    Delta = U(T,z0) - z0 * U_z(T,z0)
  *
+ * Machine-readable stdout line (for run-script parsing):
+ *   ASIAN_PRICE=<val>  ASIAN_DELTA=<val>  ASIAN_Z0=<val>
+ *
  * Build inside container:
  *   cd /workspace/build && make main_asian_1d -j4
  * Run:
  *   ./build/bin/main_asian_1d --config config/asian_1d.json
  *   ./build/bin/main_asian_1d --config config/asian_1d.json --refine 2
+ *   ./build/bin/main_asian_1d --config config/asian_1d.json \
+ *       --sigma 0.30 --r 0.09 --K 100 --S0 100 --N_z 200 --N_t 400
  */
 
 #include <mfem.hpp>
@@ -69,12 +74,35 @@ static int ji(const std::string& j, const std::string& k, int d) {
 
 // ---------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    const char* config_file = "config/asian_1d.json";
-    int  extra_refine = 0;
-    bool verbose      = false;
+    const char* config_file  = "config/asian_1d.json";
+    // Optional output path overrides (nullptr = use default hardcoded path)
+    const char* solution_csv = nullptr;  // dense z,u,du_dz solution
+    const char* conv_csv     = nullptr;  // convergence row (N_z,h,price,...)
+    const char* greeks_csv   = nullptr;  // per-node greeks CSV
+    // Scalar parameter overrides (negative = use JSON value)
+    double sigma_ov = -1.0;
+    double r_ov     = -1.0;
+    double K_ov     = -1.0;
+    double S0_ov    = -1.0;
+    int    N_z_ov   = -1;
+    int    N_t_ov   = -1;
+    int    extra_refine = 0;
+    bool   verbose      = false;
 
     OptionsParser args(argc, argv);
-    args.AddOption(&config_file, "-c", "--config", "JSON config file");
+    args.AddOption(&config_file,  "-c", "--config",       "JSON config file");
+    args.AddOption(&solution_csv, "--solution-csv", "--solution-csv",
+                   "Path for dense z,u,du_dz solution CSV (default: v6_asian_solution.csv)");
+    args.AddOption(&conv_csv,     "--conv-csv", "--conv-csv",
+                   "Path for convergence row CSV (appended; default: v6_asian_convergence.csv)");
+    args.AddOption(&greeks_csv,   "--greeks-csv", "--greeks-csv",
+                   "Path for per-node greeks CSV (default: v6_asian_delta.csv)");
+    args.AddOption(&sigma_ov,     "--sigma", "--sigma",   "Override sigma (-1=JSON)");
+    args.AddOption(&r_ov,         "--r",     "--r",       "Override r (-1=JSON)");
+    args.AddOption(&K_ov,         "--K",     "--K",       "Override K (-1=JSON)");
+    args.AddOption(&S0_ov,        "--S0",    "--S0",      "Override S0 (-1=JSON)");
+    args.AddOption(&N_z_ov,       "--N_z",   "--N_z",     "Override N_z (-1=JSON)");
+    args.AddOption(&N_t_ov,       "--N_t",   "--N_t",     "Override N_t (-1=JSON)");
     args.AddOption(&extra_refine, "-r", "--refine",
                    "Additional uniform refinements (doubles N_z each time)");
     args.AddOption(&verbose, "-v", "--verbose", "-no-v", "--no-verbose",
@@ -82,19 +110,25 @@ int main(int argc, char* argv[]) {
     args.Parse();
     if (!args.Good()) { args.PrintUsage(std::cout); return 1; }
 
-    // ---- Load JSON ----
+    // ---- Load JSON, then apply CLI overrides ----
     const std::string json = slurp(config_file);
-    const double sigma  = jd(json, "sigma",  0.2);
-    const double r      = jd(json, "r",      0.05);
-    const double T      = jd(json, "T",      1.0);
-    const double K      = jd(json, "K",      100.0);
-    const double S0     = jd(json, "S0",     100.0);
-    const double z_min  = jd(json, "z_min",  -2.0);
-    const double z_max  = jd(json, "z_max",   2.0);
-    int    N_z  = ji(json, "N_z",  128);
-    int    N_t  = ji(json, "N_t",  200);
-    const int    p      = ji(json, "poly_order", 1);
+    double sigma  = jd(json, "sigma",  0.2);
+    double r      = jd(json, "r",      0.05);
+    double T      = jd(json, "T",      1.0);
+    double K      = jd(json, "K",      100.0);
+    double S0     = jd(json, "S0",     100.0);
+    double z_min  = jd(json, "z_min",  -2.0);
+    double z_max  = jd(json, "z_max",   2.0);
+    int    N_z    = ji(json, "N_z",    128);
+    int    N_t    = ji(json, "N_t",    200);
+    int    p      = ji(json, "poly_order", 1);
 
+    if (sigma_ov > 0.0) sigma = sigma_ov;
+    if (r_ov     > 0.0) r     = r_ov;
+    if (K_ov     > 0.0) K     = K_ov;
+    if (S0_ov    > 0.0) S0    = S0_ov;
+    if (N_z_ov   > 0)   N_z   = N_z_ov;
+    if (N_t_ov   > 0)   N_t   = N_t_ov;
     N_z <<= extra_refine;
 
     const double dt  = T / N_t;
@@ -128,18 +162,16 @@ int main(int argc, char* argv[]) {
 
     // ---- Boundary markers ----
     // MakeCartesian1D: attr=1 (left), attr=2 (right)
-    // Only the right boundary is Dirichlet (U=0 at z=+2).
-    // Left boundary is natural (Neumann zero — degenerate boundary).
+    // Right boundary is Dirichlet (U=0 at z=+2); left is natural.
     Array<int> ess_bdr(mesh.bdr_attributes.Max()); ess_bdr  = 0;
     ess_bdr[1] = 1;
     Array<int> ess_tdofs;
     fes.GetEssentialTrueDofs(ess_bdr, ess_tdofs);
 
     // ---- Bilinear form (assembled once — coefficients are time-independent) ----
-    // No reaction term in the Asian PDE, so mass coefficient = 1/dt only.
     ConstantCoefficient mass_c(1.0/dt);
-    AsianDiffusion      diff_coeff(sigma);          // (sigma^2/2)*z^2
-    AsianConvection     conv_coeff(r, sigma, T);    // 1/T + (r+sigma^2)*z
+    AsianDiffusion      diff_coeff(sigma);
+    AsianConvection     conv_coeff(r, sigma, T);
 
     BilinearForm a(&fes);
     a.AddDomainIntegrator(new MassIntegrator(mass_c));
@@ -174,7 +206,6 @@ int main(int argc, char* argv[]) {
     Vector sol(ndof), rhs(ndof);
 
     for (int step = 0; step < N_t; step++) {
-        // RHS: (U^n/dt, v)
         GridFunctionCoefficient un_gfc(&u_h);
         ConstantCoefficient     dtinv_c(1.0/dt);
         ProductCoefficient      rhs_coeff(dtinv_c, un_gfc);
@@ -183,7 +214,6 @@ int main(int argc, char* argv[]) {
         lf.Assemble();
         rhs = lf;
 
-        // Right BC = 0: set essential DOF entries to 0
         for (int i : ess_tdofs) rhs[i] = 0.0;
 
         sol = 0.0;
@@ -198,24 +228,19 @@ int main(int argc, char* argv[]) {
             std::cout << "  step=" << step+1 << " tau=" << (step+1)*dt << "\n";
     }
 
-    // ---- Find U(T, z0) and U_z(T, z0) by locating the node closest to z0 ----
-    // z0 = K/S0; linear interpolation between bracketing nodes.
+    // ---- Extract U(T, z0) and U_z(T, z0) ----
+    // Linear interpolation for U(z0); centred difference for U_z.
     double U_z0 = 0.0, dU_z0 = 0.0;
     {
-        // Find index of node just below z0
         int idx = (int)std::floor((z0 - z_min) / h);
-        idx = std::max(1, std::min(N_z - 2, idx));   // interior only for gradient
-
-        // Linear interpolation for U(z0)
-        const double z_left  = z_min + idx * h;
-        const double frac    = (z0 - z_left) / h;
+        idx = std::max(1, std::min(N_z - 2, idx));
+        const double z_left = z_min + idx * h;
+        const double frac   = (z0 - z_left) / h;
         U_z0  = (1.0 - frac) * u_h[idx] + frac * u_h[idx+1];
-
-        // Centred difference for U_z(z0)
         dU_z0 = (u_h[idx+1] - u_h[idx-1]) / (2.0 * h);
     }
 
-    const double delta = U_z0 - z0 * dU_z0;   // d(S0*U(z0))/dS0
+    const double delta = U_z0 - z0 * dU_z0;   // financial Asian Delta
     const double price = S0 * U_z0;
 
     std::cout << "\n--- Results ---\n"
@@ -226,18 +251,80 @@ int main(int argc, char* argv[]) {
               << "  Price = S0*U(z0) = " << price << "\n"
               << "  Asian Delta = U(z0) - z0*U_z(z0) = " << delta << "\n";
 
-    // ---- Write full solution CSV ----
+    // Machine-readable line for the run script
+    std::cout << "ASIAN_PRICE=" << std::setprecision(10) << price
+              << "  ASIAN_DELTA=" << delta
+              << "  ASIAN_Z0=" << z0 << "\n";
+
+    // =====================================================================
+    // Output: dense solution CSV
+    // =====================================================================
+    const char* sol_path = solution_csv ? solution_csv
+                                        : "results/solutions/v6_asian_solution.csv";
     {
-        std::ofstream f("results/solutions/v6_asian_solution.csv");
-        f << "z,u,du_dz\n" << std::setprecision(10);
+        std::ofstream f(sol_path);
+        // Header comment documents the chain rule and formula
+        f << "# V6 Asian option solution: Rogers-Shi reduction z=(K-A/T)/S\n"
+          << "# delta_reduced_dz = -du/dz  (sensitivity w.r.t. reduced coordinate)\n"
+          << "# delta_Asian_financial = U(z0) - z0*U_z(z0)  (financial Delta via chain rule)\n"
+          << "# z0=" << z0 << "  sigma=" << sigma << "  r=" << r
+          << "  K=" << K << "  S0=" << S0 << "  T=" << T << "\n"
+          << "z,u,du_dz,delta_reduced_dz,delta_Asian_financial\n"
+          << std::setprecision(10);
         for (int i = 1; i < ndof - 1; i++) {
-            const double zi   = z_min + i * h;
-            const double dz_u = (u_h[i+1] - u_h[i-1]) / (2.0*h);
-            f << zi << "," << u_h[i] << "," << dz_u << "\n";
+            const double zi      = z_min + i * h;
+            const double dz_u    = (u_h[i+1] - u_h[i-1]) / (2.0*h);
+            const double del_red = -dz_u;             // reduced-coord sensitivity
+            f << zi << "," << u_h[i] << "," << dz_u
+              << "," << del_red << "," << delta << "\n";
         }
     }
 
-    // ---- Write price vs S0 row (for MC benchmark comparison) ----
+    // =====================================================================
+    // Output: greeks CSV (per-node; delta_Asian_financial is the scalar at z0)
+    // =====================================================================
+    const char* gr_path = greeks_csv ? greeks_csv
+                                     : "results/greeks/v6_asian_delta.csv";
+    {
+        std::ofstream f(gr_path);
+        f << "# Δ_Asian = U(z0) - z0*U_z(z0) = financial Delta via chain rule (Sec. 3.2)\n"
+          << "# delta_reduced_dz = -U_z(z)  (sensitivity in reduced coordinate z)\n"
+          << "z,u,du_dz,delta_reduced_dz,delta_Asian_financial,note\n"
+          << std::setprecision(10);
+        const std::string note = "Delta_Asian=U-z0*Uz;z0=K/S0=" +
+                                 std::to_string(z0) + ";sigma=" + std::to_string(sigma);
+        for (int i = 1; i < ndof - 1; i++) {
+            const double zi      = z_min + i * h;
+            const double ui      = u_h[i];
+            const double dz_u    = (u_h[i+1] - u_h[i-1]) / (2.0*h);
+            const double del_red = -dz_u;
+            f << zi << "," << ui << "," << dz_u << ","
+              << del_red << "," << delta << "," << note << "\n";
+        }
+    }
+
+    // =====================================================================
+    // Output: convergence row CSV (appended)
+    // =====================================================================
+    const char* cv_path = conv_csv ? conv_csv
+                                   : "results/convergence/v6_asian_convergence.csv";
+    {
+        std::ifstream chk(cv_path);
+        chk.seekg(0, std::ios::end);
+        const bool new_file = !chk.is_open() || (chk.tellg() == 0);
+        chk.close();
+        std::ofstream fout(cv_path, std::ios::app);
+        if (new_file)
+            fout << "sigma,r,K,S0,N_z,h,N_t,dt,ndof,U_z0,price,delta\n";
+        fout << std::setprecision(10)
+             << sigma << "," << r << "," << K << "," << S0 << ","
+             << N_z << "," << h << "," << N_t << "," << dt << "," << ndof << ","
+             << U_z0 << "," << price << "," << delta << "\n";
+    }
+
+    // =====================================================================
+    // Output: price vs S0 CSV (backward-compat; appended)
+    // =====================================================================
     {
         const char* csv = "results/solutions/v6_asian_price_vs_S0.csv";
         std::ifstream chk(csv);
@@ -248,32 +335,6 @@ int main(int argc, char* argv[]) {
         fout << std::setprecision(10)
              << S0 << "," << K << "," << z0 << ","
              << price << "," << delta << "\n";
-    }
-
-    // ---- Write Delta / Greeks CSV ----
-    {
-        std::ofstream f("results/greeks/v6_asian_delta.csv");
-        f << "z,u,du_dz,delta_Asian\n" << std::setprecision(10);
-        for (int i = 1; i < ndof - 1; i++) {
-            const double zi   = z_min + i * h;
-            const double ui   = u_h[i];
-            const double dz_u = (u_h[i+1] - u_h[i-1]) / (2.0*h);
-            const double d_A  = ui - zi * dz_u;
-            f << zi << "," << ui << "," << dz_u << "," << d_A << "\n";
-        }
-    }
-
-    // ---- Append convergence row ----
-    {
-        const char* csv = "results/convergence/v6_asian_convergence.csv";
-        std::ifstream chk(csv);
-        chk.seekg(0, std::ios::end);
-        const bool new_file = !chk.is_open() || (chk.tellg() == 0);
-        std::ofstream fout(csv, std::ios::app);
-        if (new_file) fout << "N_z,h,ndof,U_z0,price,delta\n";
-        fout << std::setprecision(10)
-             << N_z << "," << h << "," << ndof << ","
-             << U_z0 << "," << price << "," << delta << "\n";
     }
 
     return 0;
