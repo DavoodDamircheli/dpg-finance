@@ -19,12 +19,18 @@
  *   Row1: -(b*u,∇v) + (sigma,∇v) + (1/dt+r)*(u,v) + <sigma_hat,v>  = (f_rhs,v)
  *   Row2:  (u,∇·tau) + (1/diff)*(sigma,tau) + <u_hat,tau·n>          = 0
  *
+ * Chain-rule chain for Greeks (log-price x = log(S/K)):
+ *   vartheta = sigma_x / diff  =  du/dx   (primary trial field scaled)
+ *   Delta = dV/dS = (du/dx) / S = vartheta * exp(-x) / K
+ *   Gamma = d²V/dS² = (d²u/dx² - du/dx) / S²
+ *   Gamma_DPG approximated by centered FD of Delta in S.
+ *
  * Build (inside container):
  *   cd /workspace/build && make main_european_1d_ultraweak_mpi -j4
  *
  * Run:
- *   mpirun -np 1 ./build/bin/main_european_1d_ultraweak_mpi \
- *       -c config/european_1d_ultraweak.json
+ *   mpirun -np 4 ./build/bin/main_european_1d_ultraweak_mpi \
+ *       --config config/european_1d_ultraweak.json -v
  */
 
 #include "mfem.hpp"
@@ -66,9 +72,10 @@ static int ji(const std::string& j, const std::string& k, int d) {
 }
 
 // ---------------------------------------------------------------------------
-// Exact Black-Scholes formula (call in log-price space)
+// Black-Scholes and normal distribution helpers
 // ---------------------------------------------------------------------------
 static double ncdf(double x) { return 0.5*std::erfc(-x/std::sqrt(2.0)); }
+static double npdf(double x) { return std::exp(-0.5*x*x) / std::sqrt(2.0*M_PI); }
 
 static double bs_call(double S, double K, double r, double sig, double tau) {
     if (tau <= 0.0) return std::max(S - K, 0.0);
@@ -100,7 +107,6 @@ static void setup_test_norm_coeffs(ParGridFunction& c1_gf, ParGridFunction& c2_g
     ParMesh* pmesh = fes->GetParMesh();
     for (int i = 0; i < pmesh->GetNE(); i++) {
         double volume = pmesh->GetElementVolume(i);
-        // c1: add reaction scaling (1/dt) so that transient term is well-captured
         double c1 = std::min(diff/volume, 1.0) + 1.0/dt;
         double c2 = std::min(1.0/diff, 1.0/volume);
         fes->GetElementDofs(i, vdofs);
@@ -110,24 +116,54 @@ static void setup_test_norm_coeffs(ParGridFunction& c1_gf, ParGridFunction& c2_g
 }
 
 // ---------------------------------------------------------------------------
+// Greek data gathered on rank 0 (empty on other ranks)
+// ---------------------------------------------------------------------------
+struct GreeksData {
+    int n = 0;
+    std::vector<double> x, S, u;
+    std::vector<double> delta_dpg, delta_exact;
+    std::vector<double> gamma_dpg, gamma_exact;
+};
+
+// ---------------------------------------------------------------------------
 int main(int argc, char* argv[])
 {
     Mpi::Init(argc, argv);
-    const int myid = Mpi::WorldRank();
+    const int myid   = Mpi::WorldRank();
+    const int nproc  = Mpi::WorldSize();
     Hypre::Init();
 
     // ---- Command-line options ----
     const char* config_file = "config/european_1d_ultraweak.json";
     const char* csv_path    = "results/convergence/v2_spatial_ultraweak.csv";
-    int  extra_refine = 0;
-    bool verbose      = false;
+    const char* greeks_csv  = nullptr;   // append row to Greek error table
+    const char* dense_csv   = nullptr;   // dense solution CSV (all nodes, tau=T)
+    const char* snaps_delta = nullptr;   // delta snapshots CSV
+    const char* snaps_gamma = nullptr;   // gamma snapshots CSV
+    double sigma_override   = -1.0;      // negative → use JSON value
+    int    N_t_override     = -1;        // negative → use JSON value
+    int    extra_refine     = 0;
+    bool   verbose          = false;
 
     OptionsParser args(argc, argv);
-    args.AddOption(&config_file, "-c", "--config", "JSON config file");
-    args.AddOption(&csv_path, "--csv-path", "--csv-path", "Convergence CSV output path");
-    args.AddOption(&extra_refine, "-r", "--refine",
+    args.AddOption(&config_file,   "-c", "--config",       "JSON config file");
+    args.AddOption(&csv_path,      "--csv-path", "--csv-path",
+                   "Convergence CSV output path");
+    args.AddOption(&greeks_csv,    "--greeks-csv", "--greeks-csv",
+                   "Greek error table CSV (appended, one row per run)");
+    args.AddOption(&dense_csv,     "--dense-csv", "--dense-csv",
+                   "Dense solution+Greeks CSV at tau=T");
+    args.AddOption(&snaps_delta,   "--snaps-delta", "--snaps-delta",
+                   "Delta snapshot CSV (tau=0.1,0.25,0.5,1.0)");
+    args.AddOption(&snaps_gamma,   "--snaps-gamma", "--snaps-gamma",
+                   "Gamma snapshot CSV (tau=0.1,0.25,0.5,1.0)");
+    args.AddOption(&sigma_override,"--sigma", "--sigma",
+                   "Override sigma from JSON (-1 = use JSON value)");
+    args.AddOption(&N_t_override,  "--N_t", "--N_t",
+                   "Override N_t from JSON (-1 = use JSON value)");
+    args.AddOption(&extra_refine,  "-r", "--refine",
                    "Additional uniform refinements (doubles N_x each time)");
-    args.AddOption(&verbose, "-v", "--verbose", "-no-v", "--no-verbose",
+    args.AddOption(&verbose,       "-v", "--verbose", "-no-v", "--no-verbose",
                    "Print per-step progress");
     args.Parse();
     if (!args.Good()) {
@@ -148,6 +184,9 @@ int main(int argc, char* argv[])
     int    p       = ji(json, "p",        2);
     int    delta_p = ji(json, "delta_p",  1);
 
+    // Apply overrides
+    if (sigma_override > 0.0) sigma = sigma_override;
+    if (N_t_override   > 0)   N_t   = N_t_override;
     N_x <<= extra_refine;   // double N_x per refinement level
 
     // ---- Critical invariant: b = r - sigma^2/2 ----
@@ -159,7 +198,6 @@ int main(int argc, char* argv[])
 
     const double Lx = x_max - x_min;
     const double h  = Lx / N_x;
-    // Quasi-2D: strip height = mesh spacing
     const double h_y = h;
 
     if (myid == 0) {
@@ -177,25 +215,20 @@ int main(int argc, char* argv[])
     //   1 = bottom (y=0), 2 = right (x=Lx), 3 = top (y=Ly), 4 = left (x=0)
     Mesh mesh = Mesh::MakeCartesian2D(N_x, 1, Element::QUADRILATERAL,
                                       true, Lx, h_y);
-    // Shift x from [0,Lx] to [x_min,x_max]
-    for (int i = 0; i <= mesh.GetNV(); i++) {
-        // GetNV returns number of vertices; use index loop safely
-        if (i < mesh.GetNV())
-            mesh.GetVertex(i)[0] += x_min;
-    }
+    for (int i = 0; i < mesh.GetNV(); i++)
+        mesh.GetVertex(i)[0] += x_min;
 
     mesh.EnsureNCMesh(true);
 
     ParMesh pmesh(MPI_COMM_WORLD, mesh);
     mesh.Clear();
 
-    const int dim = pmesh.Dimension();  // should be 2
+    const int dim = pmesh.Dimension();  // 2
 
     // ---- Define FE spaces ----
     enum TrialSpace { u_space = 0, sigma_space = 1, hatu_space = 2, hatf_space = 3 };
     enum TestSpace  { v_space = 0, tau_space   = 1 };
 
-    // Trial spaces
     FiniteElementCollection* u_fec     = new L2_FECollection(p-1, dim);
     FiniteElementCollection* sigma_fec = new L2_FECollection(p-1, dim);
     FiniteElementCollection* hatu_fec  = new H1_Trace_FECollection(p, dim);
@@ -206,7 +239,6 @@ int main(int argc, char* argv[])
     ParFiniteElementSpace* hatu_fes  = new ParFiniteElementSpace(&pmesh, hatu_fec);
     ParFiniteElementSpace* hatf_fes  = new ParFiniteElementSpace(&pmesh, hatf_fec);
 
-    // Test space FE collections (broken, element-local)
     const int test_order = p + delta_p;
     FiniteElementCollection* v_fec   = new H1_FECollection(test_order, dim);
     FiniteElementCollection* tau_fec = new RT_FECollection(test_order - 1, dim);
@@ -222,32 +254,22 @@ int main(int argc, char* argv[])
     ConstantCoefficient one(1.0);
     ConstantCoefficient negone(-1.0);
 
-    // Convection coefficient for MixedScalarWeakDivergenceIntegrator.
-    // The integrator computes -(u, betacoeff·∇v), which in the strong form
-    // corresponds to +(betacoeff·∇u, v).  Our PDE has -b*∇u, so we set
-    // betacoeff = [-b, 0] to get -(u, [-b]·∇v) → +(-b*∂u/∂x, v) = -b*u_x. ✓
+    // Convection: -(b*u,∇v) → betacoeff = [-b, 0]
     Vector beta_vec(dim); beta_vec = 0.0; beta_vec[0] = -b;
     VectorConstantCoefficient betacoeff(beta_vec);
-    // For the test norm beta⊗beta term
     OuterProductCoefficient bbtcoeff(betacoeff, betacoeff);
 
-    // Diffusion inverse coefficient: (1/diff) * I (scalar applied to vector mass)
     const double diff_inv_val = 1.0 / diff;
     ConstantCoefficient diff_inv(diff_inv_val);
 
-    // Reaction: 1/dt + r
-    // (updated each time step, but since the bilinear form is reassembled anyway,
-    //  we update a mutable double and use a pointer-based coefficient)
     double reaction_val = 1.0/dt + r;
     ConstantCoefficient reaction_c(reaction_val);
 
-    // Diffusion for test norm
     ConstantCoefficient diff_coeff(diff);
 
     // ---- DPG weak form ----
     Array<ParFiniteElementSpace*>  trial_fes;
     Array<FiniteElementCollection*> test_fec;
-
     trial_fes.Append(u_fes);
     trial_fes.Append(sigma_fes);
     trial_fes.Append(hatu_fes);
@@ -258,39 +280,25 @@ int main(int argc, char* argv[])
     ParDPGWeakForm* a = new ParDPGWeakForm(trial_fes, test_fec);
     a->StoreMatrices(true);
 
-    // Row1 (test v ∈ H1): -(b*u,∇v) + (sigma,∇v) + (1/dt+r)*(u,v) + <sigma_hat,v>
-    //   -(b*u,∇v): MixedScalarWeakDivergenceIntegrator(betacoeff)
+    // Row1 (test v ∈ H1)
     a->AddTrialIntegrator(new MixedScalarWeakDivergenceIntegrator(betacoeff),
                           TrialSpace::u_space, TestSpace::v_space);
-    //   (sigma,∇v): TransposeIntegrator(GradientIntegrator)
     a->AddTrialIntegrator(new TransposeIntegrator(new GradientIntegrator(one)),
                           TrialSpace::sigma_space, TestSpace::v_space);
-    //   (1/dt+r)*(u,v): MixedScalarMassIntegrator(reaction_c)
     a->AddTrialIntegrator(new MixedScalarMassIntegrator(reaction_c),
                           TrialSpace::u_space, TestSpace::v_space);
-    //   <sigma_hat, v>: TraceIntegrator
     a->AddTrialIntegrator(new TraceIntegrator,
                           TrialSpace::hatf_space, TestSpace::v_space);
 
-    // Row2 (test tau ∈ H(div)): (u,∇·tau) + (1/diff)*(sigma,tau) + <u_hat,tau·n>
-    //   (u,∇·tau): MixedScalarWeakGradientIntegrator(negone)
-    //   Note: MixedScalarWeakGradientIntegrator(q) computes (u, q∇·tau)
-    //   We want (u,∇·tau) so q=1 but the integrator convention is weak gradient:
-    //   int_E u * q * div(tau) dx
-    //   Actually in pconvection-diffusion: (u,∇·tau) uses negone because the
-    //   ultraweak form has -(u,∇·tau) in one convention, or we match the template:
-    //   template uses: MixedScalarWeakGradientIntegrator(negone) for u_space→tau_space
-    //   which gives (u, ∇·τ) with the sign absorbed into negone
+    // Row2 (test tau ∈ H(div))
     a->AddTrialIntegrator(new MixedScalarWeakGradientIntegrator(negone),
                           TrialSpace::u_space, TestSpace::tau_space);
-    //   (1/diff)*(sigma,tau): TransposeIntegrator(VectorFEMassIntegrator(diff_inv))
     a->AddTrialIntegrator(new TransposeIntegrator(new VectorFEMassIntegrator(diff_inv)),
                           TrialSpace::sigma_space, TestSpace::tau_space);
-    //   <u_hat, tau·n>: NormalTraceIntegrator
     a->AddTrialIntegrator(new NormalTraceIntegrator,
                           TrialSpace::hatu_space, TestSpace::tau_space);
 
-    // ---- Test norm (element-wise robust, following template) ----
+    // ---- Test norm ----
     FiniteElementCollection* coeff_fec = new L2_FECollection(0, dim);
     ParFiniteElementSpace*   coeff_fes = new ParFiniteElementSpace(&pmesh, coeff_fec);
 
@@ -302,21 +310,18 @@ int main(int argc, char* argv[])
     GridFunctionCoefficient c1_coeff(&c1_gf);
     GridFunctionCoefficient c2_coeff(&c2_gf);
 
-    // v block:  c1*(v,v) + diff*(∇v,∇v) + (beta⊗beta:∇v,∇v)
     a->AddTestIntegrator(new MassIntegrator(c1_coeff),
                          TestSpace::v_space, TestSpace::v_space);
     a->AddTestIntegrator(new DiffusionIntegrator(diff_coeff),
                          TestSpace::v_space, TestSpace::v_space);
     a->AddTestIntegrator(new DiffusionIntegrator(bbtcoeff),
                          TestSpace::v_space, TestSpace::v_space);
-    // tau block: c2*(tau,tau) + (∇·tau,∇·tau)
     a->AddTestIntegrator(new VectorFEMassIntegrator(c2_coeff),
                          TestSpace::tau_space, TestSpace::tau_space);
     a->AddTestIntegrator(new DivDivIntegrator(one),
                          TestSpace::tau_space, TestSpace::tau_space);
 
     // ---- Initial condition ----
-    // u_prev lives in u_fes (L2)
     ParGridFunction u_prev_gf(u_fes);
     FunctionCoefficient payoff_fc(payoff_call_cb);
     u_prev_gf.ProjectCoefficient(payoff_fc);
@@ -333,23 +338,123 @@ int main(int argc, char* argv[])
     BlockVector x(offsets);
     x = 0.0;
 
-    // ---- Boundary attribute setup ----
-    // MakeCartesian2D boundary attrs: 1=bottom,2=right,3=top,4=left
-    Array<int> left_bdr(pmesh.bdr_attributes.Max());  left_bdr = 0; left_bdr[3] = 1; // attr=4
-    Array<int> right_bdr(pmesh.bdr_attributes.Max()); right_bdr = 0; right_bdr[1] = 1; // attr=2
+    // ---- Boundary attributes ----
+    Array<int> left_bdr(pmesh.bdr_attributes.Max());  left_bdr = 0; left_bdr[3] = 1;
+    Array<int> right_bdr(pmesh.bdr_attributes.Max()); right_bdr = 0; right_bdr[1] = 1;
     Array<int> ess_bdr_uhat(pmesh.bdr_attributes.Max()); ess_bdr_uhat = 0;
-    ess_bdr_uhat[1] = 1; // right boundary (attr=2)
-    ess_bdr_uhat[3] = 1; // left boundary  (attr=4)
+    ess_bdr_uhat[1] = 1;
+    ess_bdr_uhat[3] = 1;
 
-    // ---- Register time-dependent RHS (updated each step) ----
-    // RHS: f_rhs(v) = (u^n/dt, v)
-    // We add a domain LF integrator for the v test space
-    // The coefficient wraps u_prev_gf scaled by 1/dt
+    // ---- RHS coefficient ----
     GridFunctionCoefficient u_prev_coeff(&u_prev_gf);
     ConstantCoefficient dtinv_c(1.0/dt);
     ProductCoefficient   rhs_coeff(dtinv_c, u_prev_coeff);
 
     a->AddDomainLFIntegrator(new DomainLFIntegrator(rhs_coeff), TestSpace::v_space);
+
+    // =====================================================================
+    // Greek extraction lambda (collective — all ranks participate)
+    // Returns populated GreeksData on rank 0; empty on other ranks.
+    // vartheta = sigma_x / diff = du/dx (x-component of sigma_field / diff)
+    // Delta_DPG = vartheta / S = (sigma_x/diff) / (K*exp(x))
+    // Gamma_DPG = centered FD of Delta in S at element centres
+    // =====================================================================
+    auto extract_greeks = [&](ParGridFunction& u_gf, ParGridFunction& sig_gf,
+                              double tau_cur) -> GreeksData
+    {
+        const int ne = pmesh.GetNE();
+        std::vector<double> lx_v, lS_v, lu_v, ld_v;
+        lx_v.reserve(ne); lS_v.reserve(ne);
+        lu_v.reserve(ne); ld_v.reserve(ne);
+
+        IntegrationPoint ipc; ipc.Set2(0.5, 0.5);
+        for (int i = 0; i < ne; i++) {
+            ElementTransformation* tr = pmesh.GetElementTransformation(i);
+            Vector phys(2); tr->Transform(ipc, phys);
+            const double xc = phys[0];
+            const double Sc = K * std::exp(xc);
+            const double u_val  = u_gf.GetValue(i, ipc);
+            const double sig_x  = sig_gf.GetValue(i, ipc, 1);  // diff*du/dx (vdim=1)
+            const double delta  = (sig_x / diff) / Sc;          // du/dx / S = dV/dS
+            lx_v.push_back(xc); lS_v.push_back(Sc);
+            lu_v.push_back(u_val); ld_v.push_back(delta);
+        }
+
+        int local_n = (int)lx_v.size();
+        std::vector<int> all_n(nproc), displs(nproc, 0);
+        MPI_Allgather(&local_n, 1, MPI_INT,
+                      all_n.data(), 1, MPI_INT, MPI_COMM_WORLD);
+        int total_n = 0;
+        for (int rk = 0; rk < nproc; rk++) { displs[rk] = total_n; total_n += all_n[rk]; }
+
+        std::vector<double> ax(total_n), aS(total_n), au(total_n), ad(total_n);
+        MPI_Gatherv(lx_v.data(), local_n, MPI_DOUBLE,
+                    ax.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(lS_v.data(), local_n, MPI_DOUBLE,
+                    aS.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(lu_v.data(), local_n, MPI_DOUBLE,
+                    au.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(ld_v.data(), local_n, MPI_DOUBLE,
+                    ad.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+        GreeksData g;
+        if (myid == 0) {
+            std::vector<int> idx(total_n);
+            std::iota(idx.begin(), idx.end(), 0);
+            std::sort(idx.begin(), idx.end(), [&](int a, int b){ return ax[a] < ax[b]; });
+
+            g.n = total_n;
+            g.x.resize(total_n); g.S.resize(total_n); g.u.resize(total_n);
+            g.delta_dpg.resize(total_n);
+            g.delta_exact.resize(total_n, 0.0);
+            g.gamma_dpg.resize(total_n, 0.0);
+            g.gamma_exact.resize(total_n, 0.0);
+
+            for (int i = 0; i < total_n; i++) {
+                int j = idx[i];
+                g.x[i] = ax[j]; g.S[i] = aS[j];
+                g.u[i] = au[j]; g.delta_dpg[i] = ad[j];
+            }
+
+            // Exact Greeks: Delta = N(d1), Gamma = phi(d1)/(S*sigma*sqrt(tau))
+            for (int i = 0; i < total_n; i++) {
+                if (tau_cur > 1e-12) {
+                    const double sq = sigma * std::sqrt(tau_cur);
+                    const double d1 = (g.x[i] + (r + 0.5*sigma*sigma)*tau_cur) / sq;
+                    g.delta_exact[i] = ncdf(d1);
+                    g.gamma_exact[i] = npdf(d1) / (g.S[i] * sigma * sq);
+                } else {
+                    g.delta_exact[i] = (g.x[i] > 0.0) ? 1.0 : 0.0;
+                    g.gamma_exact[i] = 0.0;
+                }
+            }
+
+            // Gamma DPG via centered FD of Delta in S at element centres
+            // dDelta/dS ≈ (Delta_{i+1} - Delta_{i-1}) / (S_{i+1} - S_{i-1})
+            if (total_n >= 2) {
+                for (int i = 1; i < total_n-1; i++) {
+                    g.gamma_dpg[i] = (g.delta_dpg[i+1] - g.delta_dpg[i-1]) /
+                                     (g.S[i+1] - g.S[i-1]);
+                }
+                // One-sided at boundaries
+                g.gamma_dpg[0] = (g.delta_dpg[1] - g.delta_dpg[0]) /
+                                  (g.S[1] - g.S[0]);
+                g.gamma_dpg[total_n-1] =
+                    (g.delta_dpg[total_n-1] - g.delta_dpg[total_n-2]) /
+                    (g.S[total_n-1] - g.S[total_n-2]);
+            }
+        }
+        return g;
+    };
+
+    // =====================================================================
+    // Snapshot setup: tau = 0.1, 0.25, 0.5, 1.0
+    // =====================================================================
+    const std::vector<double> snap_taus = {0.1, 0.25, 0.5, 1.0};
+    const int n_snaps = (int)snap_taus.size();
+    std::vector<bool>       snap_done(n_snaps, false);
+    std::vector<GreeksData> snap_data(n_snaps);
+    const bool do_snaps = (snaps_delta != nullptr || snaps_gamma != nullptr);
 
     // ---- Time loop ----
     if (myid == 0)
@@ -358,13 +463,8 @@ int main(int argc, char* argv[])
     for (int step = 0; step < N_t; step++) {
         const double tau_n1 = (step + 1) * dt;
 
-        // Assemble DPG system (recomputes G, B, b with current u_prev_gf for RHS)
         a->Assemble();
 
-        // Set essential BCs on u_hat (block 2)
-        // u_hat = -u_exact on x-boundaries (call option BCs)
-        // Left (x=x_min): u=0 → u_hat = -u = 0
-        // Right (x=x_max): u = K*(exp(x_max) - exp(-r*tau_n1)) → u_hat = -u
         double rgt_bc_val = -(K * (std::exp(x_max) - std::exp(-r * tau_n1)));
 
         ParGridFunction hatu_gf;
@@ -374,28 +474,24 @@ int main(int argc, char* argv[])
         hatu_gf.ProjectBdrCoefficient(left_bc_cf, left_bdr);
         hatu_gf.ProjectBdrCoefficient(rgt_bc_cf,  right_bdr);
 
-        // Compute essential DOF list (only hatu DOFs, offset by u+sigma sizes)
         Array<int> ess_tdof_list_uhat;
         hatu_fes->GetEssentialTrueDofs(ess_bdr_uhat, ess_tdof_list_uhat);
 
-        const int n = ess_tdof_list_uhat.Size();
-        Array<int> ess_tdof_list(n);
+        const int n_ess = ess_tdof_list_uhat.Size();
+        Array<int> ess_tdof_list(n_ess);
         const int offset = u_fes->GetTrueVSize() + sigma_fes->GetTrueVSize();
-        for (int j = 0; j < n; j++)
+        for (int j = 0; j < n_ess; j++)
             ess_tdof_list[j] = ess_tdof_list_uhat[j] + offset;
 
-        // Form linear system
         OperatorPtr Ah;
         Vector X, B;
         a->FormLinearSystem(ess_tdof_list, x, Ah, X, B);
 
         BlockOperator* A = Ah.As<BlockOperator>();
 
-        // Block diagonal preconditioner
         BlockDiagonalPreconditioner M(A->RowOffsets());
         M.owns_blocks = 1;
 
-        // AMG for u, sigma, hatu blocks; AMS for hatf (H(div) trace) block
         HypreBoomerAMG* amg0 = new HypreBoomerAMG((HypreParMatrix&)A->GetBlock(0,0));
         amg0->SetPrintLevel(0);
         HypreBoomerAMG* amg1 = new HypreBoomerAMG((HypreParMatrix&)A->GetBlock(1,1));
@@ -421,18 +517,34 @@ int main(int argc, char* argv[])
 
         a->RecoverFEMSolution(X, x);
 
-        // Update u_prev_gf for next step's RHS
-        // The u block is block 0 in x
+        // Update u_prev for next step's RHS
         ParGridFunction u_sol_gf;
         u_sol_gf.MakeRef(u_fes, x.GetBlock(TrialSpace::u_space), 0);
-        u_prev_gf = u_sol_gf;  // deep copy
+        u_prev_gf = u_sol_gf;
+
+        // Capture snapshots at tau = 0.1, 0.25, 0.5, 1.0
+        if (do_snaps) {
+            ParGridFunction sig_snap;
+            sig_snap.MakeRef(sigma_fes, x.GetBlock(TrialSpace::sigma_space), 0);
+            for (int si = 0; si < n_snaps; si++) {
+                if (!snap_done[si] &&
+                    std::abs(tau_n1 - snap_taus[si]) < 0.5 * dt + 1e-14) {
+                    if (myid == 0)
+                        std::cout << "  [snap] tau=" << snap_taus[si] << "\n";
+                    snap_data[si] = extract_greeks(u_sol_gf, sig_snap, snap_taus[si]);
+                    snap_done[si] = true;
+                }
+            }
+        }
 
         if (verbose && myid == 0 && (step % 50 == 0))
             std::cout << "  step=" << step << "  tau=" << tau_n1
                       << "  CG_iters=" << cg.GetNumIterations() << "\n";
     }
 
-    // ---- Error computation at tau=T ----
+    // =====================================================================
+    // Final Greek extraction and error computation at tau = T
+    // =====================================================================
     g_tau_cb = T;
     FunctionCoefficient exact_fc(exact_logprice_cb);
 
@@ -450,86 +562,32 @@ int main(int argc, char* argv[])
                   << "  Linf_err=" << Linferr << "\n";
     }
 
-    // ---- Delta extraction (all MPI ranks contribute) ----
-    // sigma_field = diff * ∇u  →  sigma_x = diff * du/dx
-    // Delta_DPG = (sigma_x / diff) / (K * exp(x)) = du/dx / (K * exp(x)) = du/dS
-    {
-        ParGridFunction sigma_final_gf;
-        sigma_final_gf.MakeRef(sigma_fes, x.GetBlock(TrialSpace::sigma_space), 0);
+    // Extract Greeks at tau=T
+    ParGridFunction sigma_final_gf;
+    sigma_final_gf.MakeRef(sigma_fes, x.GetBlock(TrialSpace::sigma_space), 0);
 
-        // Each rank gathers its local element-centre data
-        std::vector<double> lx_v, lS_v, ldpg_v, lexact_v;
+    GreeksData gfinal = extract_greeks(u_final_gf, sigma_final_gf, T);
 
-        const int ne = pmesh.GetNE();
-        for (int i = 0; i < ne; i++) {
-            const IntegrationPoint& ip_c =
-                Geometries.GetCenter(pmesh.GetElementBaseGeometry(i));
-            ElementTransformation* tr = pmesh.GetElementTransformation(i);
-            Vector phys;
-            tr->Transform(ip_c, phys);
-            const double xc = phys[0];
-            const double Sc = K * std::exp(xc);
-
-            IntegrationPoint ip;
-            ip.Set2(ip_c.x, ip_c.y);
-            // component 1 = x-component of the vector L2 GridFunction
-            double sigma_x_val = sigma_final_gf.GetValue(i, ip, 1);
-            double delta_dpg   = (sigma_x_val / diff) / Sc;
-
-            double delta_exact = 0.0;
-            if (T > 0.0) {
-                const double sq = g_sigma * std::sqrt(T);
-                const double d1 = (xc + (g_r + 0.5*g_sigma*g_sigma)*T) / sq;
-                delta_exact = ncdf(d1);
-            }
-
-            lx_v.push_back(xc);
-            lS_v.push_back(Sc);
-            ldpg_v.push_back(delta_dpg);
-            lexact_v.push_back(delta_exact);
+    // Compute Greek errors on rank 0 (L2 in log-price space, Linf over all nodes)
+    double delta_L2   = 0.0, delta_Linf = 0.0;
+    double gamma_L2   = 0.0, gamma_Linf = 0.0;
+    if (myid == 0 && gfinal.n > 0) {
+        for (int i = 0; i < gfinal.n; i++) {
+            const double de = std::abs(gfinal.delta_dpg[i] - gfinal.delta_exact[i]);
+            const double ge = std::abs(gfinal.gamma_dpg[i] - gfinal.gamma_exact[i]);
+            delta_L2 += de * de * h;
+            gamma_L2 += ge * ge * h;
+            delta_Linf = std::max(delta_Linf, de);
+            gamma_Linf = std::max(gamma_Linf, ge);
         }
+        delta_L2 = std::sqrt(delta_L2);
+        gamma_L2 = std::sqrt(gamma_L2);
 
-        // Gather element counts from every rank (Allgather so all ranks know displs)
-        const int nproc = Mpi::WorldSize();
-        int local_n = (int)lx_v.size();
-        std::vector<int> all_n(nproc), displs(nproc);
-        MPI_Allgather(&local_n, 1, MPI_INT, all_n.data(), 1, MPI_INT, MPI_COMM_WORLD);
-        int total_n = 0;
-        for (int rk = 0; rk < nproc; rk++) {
-            displs[rk] = total_n;
-            total_n   += all_n[rk];
-        }
-
-        // Gather all data to rank 0
-        std::vector<double> all_x(total_n), all_S(total_n), all_dpg(total_n), all_exact(total_n);
-        MPI_Gatherv(lx_v.data(),     local_n, MPI_DOUBLE,
-                    all_x.data(),    all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_Gatherv(lS_v.data(),     local_n, MPI_DOUBLE,
-                    all_S.data(),    all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_Gatherv(ldpg_v.data(),   local_n, MPI_DOUBLE,
-                    all_dpg.data(),  all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_Gatherv(lexact_v.data(), local_n, MPI_DOUBLE,
-                    all_exact.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-        if (myid == 0) {
-            // Sort rows by x before writing
-            std::vector<int> idx(total_n);
-            std::iota(idx.begin(), idx.end(), 0);
-            std::sort(idx.begin(), idx.end(),
-                      [&](int a, int b){ return all_x[a] < all_x[b]; });
-
-            std::ofstream fdelta("results/greeks/v2_delta_ultraweak.csv");
-            fdelta << "x,S,Delta_DPG,Delta_exact\n" << std::setprecision(10);
-            for (int i : idx)
-                fdelta << all_x[i] << "," << all_S[i] << ","
-                       << all_dpg[i] << "," << all_exact[i] << "\n";
-
-            std::cout << "Delta CSV: results/greeks/v2_delta_ultraweak.csv ("
-                      << total_n << " points)\n";
-        }
+        std::cout << "Delta_L2=" << delta_L2 << "  Delta_Linf=" << delta_Linf << "\n"
+                  << "Gamma_L2=" << gamma_L2 << "  Gamma_Linf=" << gamma_Linf << "\n";
     }
 
-    // ---- Extract ATM price (x=0, S=K) using element nearest x=0 ----
+    // ---- ATM price ----
     double price_at_S0 = 0.0;
     {
         double min_dist_local = 1e30, val_local = 0.0;
@@ -554,7 +612,9 @@ int main(int argc, char* argv[])
     }
     const double exact_price_at_S0 = bs_call(K, K, r, sigma, T);
 
-    // ---- Write convergence row ----
+    // =====================================================================
+    // Output: convergence CSV (existing format, appended)
+    // =====================================================================
     if (myid == 0) {
         const HYPRE_BigInt ndof_u     = u_fes->GlobalTrueVSize();
         const HYPRE_BigInt ndof_sigma = sigma_fes->GlobalTrueVSize();
@@ -578,6 +638,132 @@ int main(int argc, char* argv[])
              << ndof_u << "," << ndof_sigma << "," << ndof_trace << "," << total_ndof << ","
              << price_at_S0 << "," << exact_price_at_S0 << ","
              << L2err << "," << Linferr << "\n";
+    }
+
+    // =====================================================================
+    // Output: Greek error table row (--greeks-csv)
+    // Columns: N_x,h,sigma,price_L2_error,delta_L2_error,gamma_L2_error,
+    //          price_Linf_error,delta_Linf_error,gamma_Linf_error
+    // =====================================================================
+    if (myid == 0 && greeks_csv != nullptr) {
+        std::ifstream chk(greeks_csv);
+        chk.seekg(0, std::ios::end);
+        bool new_file = !chk.is_open() || (chk.tellg() == 0);
+        chk.close();
+        std::ofstream fg(greeks_csv, std::ios::app);
+        if (new_file)
+            fg << "N_x,h,sigma,"
+               << "price_L2_error,delta_L2_error,gamma_L2_error,"
+               << "price_Linf_error,delta_Linf_error,gamma_Linf_error\n";
+        fg << std::setprecision(10)
+           << N_x << "," << h << "," << sigma << ","
+           << L2err << "," << delta_L2 << "," << gamma_L2 << ","
+           << Linferr << "," << delta_Linf << "," << gamma_Linf << "\n";
+        std::cout << "Greeks CSV row: " << greeks_csv << "\n";
+    }
+
+    // =====================================================================
+    // Output: Dense solution CSV (--dense-csv)
+    // Columns: S,x,u_DPG,delta_DPG,gamma_DPG,delta_exact,gamma_exact,
+    //          delta_error,gamma_error
+    // Header comment states chain rule.
+    // =====================================================================
+    if (myid == 0 && dense_csv != nullptr && gfinal.n > 0) {
+        std::ofstream fd(dense_csv);
+        fd << "# Chain rule: x=log(S/K), vartheta=sigma_x/diff=du/dx\n"
+           << "# Delta=dV/dS=vartheta/S, Gamma=d2V/dS2=(u_xx-u_x)/S2 (FD approx)\n"
+           << "S,x,u_DPG,delta_DPG,gamma_DPG,delta_exact,gamma_exact,"
+              "delta_error,gamma_error\n"
+           << std::setprecision(10);
+        for (int i = 0; i < gfinal.n; i++) {
+            fd << gfinal.S[i] << "," << gfinal.x[i] << ","
+               << gfinal.u[i] << ","
+               << gfinal.delta_dpg[i] << "," << gfinal.gamma_dpg[i] << ","
+               << gfinal.delta_exact[i] << "," << gfinal.gamma_exact[i] << ","
+               << std::abs(gfinal.delta_dpg[i] - gfinal.delta_exact[i]) << ","
+               << std::abs(gfinal.gamma_dpg[i] - gfinal.gamma_exact[i]) << "\n";
+        }
+        std::cout << "Dense CSV: " << dense_csv << " (" << gfinal.n << " pts)\n";
+    }
+
+    // =====================================================================
+    // Output: backward-compatibility Delta CSV
+    // =====================================================================
+    if (myid == 0 && gfinal.n > 0) {
+        std::ofstream fdelta("results/greeks/v2_delta_ultraweak.csv");
+        fdelta << "x,S,Delta_DPG,Delta_exact\n" << std::setprecision(10);
+        for (int i = 0; i < gfinal.n; i++)
+            fdelta << gfinal.x[i] << "," << gfinal.S[i] << ","
+                   << gfinal.delta_dpg[i] << "," << gfinal.delta_exact[i] << "\n";
+        std::cout << "Delta CSV: results/greeks/v2_delta_ultraweak.csv\n";
+    }
+
+    // =====================================================================
+    // Output: Snapshot CSVs (--snaps-delta, --snaps-gamma)
+    //
+    // Delta columns: S, delta_DPG_tau01, delta_exact_tau01,
+    //                   delta_DPG_tau025, delta_exact_tau025,
+    //                   delta_DPG_tau05,  delta_exact_tau05,
+    //                   delta_DPG_tau10,  delta_exact_tau10
+    // Gamma: same structure.
+    // Rows are sorted by S (from sorted-by-x ordering).
+    // =====================================================================
+    if (myid == 0 && do_snaps) {
+        // Verify all snapshots were captured
+        for (int si = 0; si < n_snaps; si++) {
+            if (!snap_done[si])
+                std::cerr << "[WARN] Snapshot tau=" << snap_taus[si]
+                          << " not captured (increase N_t or adjust dt)\n";
+        }
+
+        // Use snap_data[0] for the S column (all snapshots share same mesh)
+        int nrows = 0;
+        for (int si = 0; si < n_snaps; si++)
+            if (snap_done[si]) { nrows = snap_data[si].n; break; }
+
+        if (nrows > 0 && snaps_delta != nullptr) {
+            std::ofstream fd(snaps_delta);
+            fd << "S,"
+               << "delta_DPG_tau01,delta_exact_tau01,"
+               << "delta_DPG_tau025,delta_exact_tau025,"
+               << "delta_DPG_tau05,delta_exact_tau05,"
+               << "delta_DPG_tau10,delta_exact_tau10\n"
+               << std::setprecision(10);
+            for (int i = 0; i < nrows; i++) {
+                fd << snap_data[0].S[i];
+                for (int si = 0; si < n_snaps; si++) {
+                    if (snap_done[si] && snap_data[si].n == nrows)
+                        fd << "," << snap_data[si].delta_dpg[i]
+                           << "," << snap_data[si].delta_exact[i];
+                    else
+                        fd << ",,";
+                }
+                fd << "\n";
+            }
+            std::cout << "Delta snapshots: " << snaps_delta << "\n";
+        }
+
+        if (nrows > 0 && snaps_gamma != nullptr) {
+            std::ofstream fg(snaps_gamma);
+            fg << "S,"
+               << "gamma_DPG_tau01,gamma_exact_tau01,"
+               << "gamma_DPG_tau025,gamma_exact_tau025,"
+               << "gamma_DPG_tau05,gamma_exact_tau05,"
+               << "gamma_DPG_tau10,gamma_exact_tau10\n"
+               << std::setprecision(10);
+            for (int i = 0; i < nrows; i++) {
+                fg << snap_data[0].S[i];
+                for (int si = 0; si < n_snaps; si++) {
+                    if (snap_done[si] && snap_data[si].n == nrows)
+                        fg << "," << snap_data[si].gamma_dpg[i]
+                           << "," << snap_data[si].gamma_exact[i];
+                    else
+                        fg << ",,";
+                }
+                fg << "\n";
+            }
+            std::cout << "Gamma snapshots: " << snaps_gamma << "\n";
+        }
     }
 
     // ---- Cleanup ----
