@@ -1,0 +1,19 @@
+{
+    "_comment": "V5 — Paper benchmark parameters (CAMWA submission)",
+    "_convention": "K=100, T=0.5, r=0.1, sigma=0.2, S_L=95, S_U=125; discrete double knock-out call",
+    "_monitoring": "daily=125 dates (250 trading-days/yr * 0.5), weekly=26 dates (one per calendar week)",
+    "sigma": 0.2,
+    "r": 0.1,
+    "T": 0.5,
+    "K": 100.0,
+    "S0": 100.0,
+    "S_lower": 95.0,
+    "S_upper": 125.0,
+    "monitoring_type": "daily",
+    "n_monitor": 125,
+    "x_min": -3.0,
+    "x_max":  3.0,
+    "N_x": 200,
+    "N_t": 1000,
+    "p": 1
+}

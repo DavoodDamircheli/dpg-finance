@@ -13,9 +13,23 @@
  *   right = K*(exp(x_max)-exp(-r*tau))     (European call at large S)
  * IC: u(x,0) = K*max(exp(x)-1, 0)         (call payoff at expiry)
  *
+ * Monitoring type (--monitoring flag or JSON "monitoring_type"):
+ *   "daily"   — 252 monitoring dates per year  (default convention)
+ *   "weekly"  — 52 monitoring dates per year
+ *   "monthly" — 12 monitoring dates per year
+ *   "none"    — no knockout (European call, same as barrier with 0 monitoring dates)
+ *   "custom"  — dates from config (not implemented in JSON; use n_monitor override)
+ *
+ * n_monitor override (JSON "n_monitor" or --n-monitor):
+ *   If > 0, overrides the per-year convention with exactly n_monitor evenly-spaced
+ *   dates over [0, T].  This lets you match paper-exact counts such as:
+ *     daily  = 125 (250 trading-days/year * T=0.5)
+ *     weekly = 26  (one per calendar week, T=0.5)
+ *
  * Build:  cd /workspace/build && make main_barrier_1d
- * Run:    ./build/bin/main_barrier_1d --config config/barrier_1d.json
- *         ./build/bin/main_barrier_1d --config config/barrier_1d.json --monitoring weekly
+ * Run:    ./build/bin/main_barrier_1d --config config/barrier_1d_paper.json
+ *         ./build/bin/main_barrier_1d --config config/barrier_1d_paper.json --monitoring weekly
+ *         ./build/bin/main_barrier_1d --config config/barrier_1d_paper.json --monitoring none
  */
 
 #include <mfem.hpp>
@@ -81,17 +95,35 @@ static double bs_call(double S, double K, double r, double sig, double tau) {
     return S*ncdf(d1) - K*std::exp(-r*tau)*ncdf(d2);
 }
 
+// Linear interpolation of solution at arbitrary x (clamped to domain)
+static double interp_at(const Vector& u, const Vector& xc, double xi) {
+    int n = u.Size();
+    if (xi <= xc[0])   return u[0];
+    if (xi >= xc[n-1]) return u[n-1];
+    // Binary search for bracket
+    int lo = 0, hi = n-1;
+    while (hi - lo > 1) {
+        int mid = (lo+hi)/2;
+        if (xc[mid] <= xi) lo = mid; else hi = mid;
+    }
+    double t = (xi - xc[lo]) / (xc[hi] - xc[lo]);
+    return u[lo] + t*(u[hi] - u[lo]);
+}
+
 // ---------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
     const char* config_file   = "config/barrier_1d.json";
     const char* monitoring_ov = nullptr;   // optional CLI override for monitoring type
+    int  n_monitor_ov = 0;    // 0 = use convention or JSON; >0 overrides count
     int  extra_refine = 0;
     bool verbose      = false;
 
     OptionsParser args(argc, argv);
     args.AddOption(&config_file,   "-c",  "--config",     "JSON config file");
     args.AddOption(&monitoring_ov, "-m",  "--monitoring",
-                   "Override monitoring type: daily | weekly | custom");
+                   "Override monitoring type: daily | weekly | monthly | none");
+    args.AddOption(&n_monitor_ov,  "-n",  "--n-monitor",
+                   "Override number of monitoring dates (0 = use config/convention)");
     args.AddOption(&extra_refine,  "-r",  "--refine",
                    "Additional uniform refinements (doubles N_x)");
     args.AddOption(&verbose,       "-v",  "--verbose",
@@ -113,9 +145,16 @@ int main(int argc, char* argv[]) {
     int    p       = ji(json, "p",        1);
     double S_lower = jd(json, "S_lower",  85.0);
     double S_upper = jd(json, "S_upper", 120.0);
+    int    n_monitor_json = ji(json, "n_monitor", 0);
     std::string monitoring_type = js(json, "monitoring_type", "daily");
 
     if (monitoring_ov) monitoring_type = monitoring_ov;
+    // Priority: CLI --n-monitor > (if CLI --monitoring used: 0) > JSON n_monitor
+    // When --monitoring is given on CLI without --n-monitor, the JSON n_monitor is
+    // irrelevant (it belongs to the monitoring type in the JSON, not the CLI override).
+    int n_monitor = (n_monitor_ov > 0)  ? n_monitor_ov
+                  : (monitoring_ov != nullptr) ? 0
+                  : n_monitor_json;
     N_x <<= extra_refine;
 
     // ---- Critical invariant: b = r - sigma^2/2 ----
@@ -128,28 +167,46 @@ int main(int argc, char* argv[]) {
     const double dt = T / N_t;
     const double h  = (x_max - x_min) / N_x;
 
+    // ---- Barrier configuration (for x_lower/x_upper only; taus built manually) ----
+    BarrierConfig cfg;
+    cfg.S_lower    = S_lower;
+    cfg.S_upper    = S_upper;
+    cfg.K          = K;
+    cfg.monitoring = "custom";  // we build custom_dates below
+
+    // ---- Build monitoring taus ----
+    // The n_monitor override allows paper-exact counts (e.g., 125 for daily at T=0.5
+    // with 250 trading-days/year convention, vs the default 252/year).
+    std::vector<double> monitoring_taus;
+    if (monitoring_type == "none") {
+        // no knockout → pure European solve
+    } else if (n_monitor > 0) {
+        // Explicit count override (paper benchmark)
+        for (int j = 1; j <= n_monitor; j++)
+            monitoring_taus.push_back(j * T / n_monitor);
+    } else if (monitoring_type == "monthly") {
+        int n = std::max(1, (int)std::round(12.0 * T));
+        for (int j = 1; j <= n; j++)
+            monitoring_taus.push_back(j * T / n);
+    } else {
+        // Use BarrierConfig convention: daily=252/yr, weekly=52/yr
+        cfg.monitoring = monitoring_type;
+        monitoring_taus = cfg.GetMonitoringTaus(T);
+        cfg.monitoring = "custom";
+    }
+    cfg.custom_dates = monitoring_taus;
+    BarrierProjection barrier(cfg);
+
     std::cout << "V5 discrete barrier call (primal DPG)  |  sigma=" << sigma
               << " r=" << r << " T=" << T << " K=" << K << "\n"
               << "b=" << b << "  diff=" << diff << "\n"
               << "Barriers: S_lower=" << S_lower << "  S_upper=" << S_upper
               << "  monitoring=" << monitoring_type << "\n"
               << "Mesh: N_x=" << N_x << "  h=" << h
-              << "  N_t=" << N_t << "  dt=" << dt << "\n\n";
-
-    // ---- Barrier configuration ----
-    BarrierConfig cfg;
-    cfg.S_lower    = S_lower;
-    cfg.S_upper    = S_upper;
-    cfg.K          = K;
-    cfg.monitoring = monitoring_type;
-    BarrierProjection barrier(cfg);
-
-    std::cout << "x_lower=" << cfg.x_lower() << "  x_upper=" << cfg.x_upper() << "\n";
+              << "  N_t=" << N_t << "  dt=" << dt << "\n\n"
+              << "x_lower=" << cfg.x_lower() << "  x_upper=" << cfg.x_upper() << "\n";
 
     // ---- Precompute knockout steps ----
-    // Step s covers tau in (s*dt, (s+1)*dt]; knockout applied if any monitoring
-    // date falls in that interval.
-    auto monitoring_taus = cfg.GetMonitoringTaus(T);
     std::vector<bool> knockout_step(N_t, false);
     for (double tau_j : monitoring_taus) {
         int s = (int)std::ceil(tau_j / dt - 1e-12) - 1;
@@ -157,8 +214,12 @@ int main(int argc, char* argv[]) {
         knockout_step[s] = true;
     }
     int n_knockout = (int)std::count(knockout_step.begin(), knockout_step.end(), true);
-    std::cout << "Monitoring dates: " << monitoring_taus.size()
+    std::cout << "Monitoring dates: " << (int)monitoring_taus.size()
               << "  knockout steps: " << n_knockout << "\n\n";
+
+    // Machine-readable summary for Python parsing
+    std::cout << "MONITORING_TYPE=" << monitoring_type << "\n"
+              << "N_MONITORING="    << (int)monitoring_taus.size() << "\n";
 
     // ---- Mesh ----
     Mesh mesh = Mesh::MakeCartesian1D(N_x, x_max - x_min);
@@ -257,7 +318,7 @@ int main(int argc, char* argv[]) {
         // --- Barrier knockout at monitoring dates ---
         if (knockout_step[step]) {
             barrier.ApplyKnockout(u_h, x_coords);
-            // Re-enforce BCs after knockout (BC nodes may have been zeroed)
+            // Re-enforce BCs after knockout
             for (int k = 0; k < ess_tdofs.Size(); ++k)
                 u_h[ess_tdofs[k]] = x_bc[ess_tdofs[k]];
         }
@@ -267,54 +328,66 @@ int main(int argc, char* argv[]) {
                       << (knockout_step[step] ? " [knockout]" : "") << "\n";
     }
 
-    // ---- Find ATM price (x closest to log(S0/K)) ----
+    // ---- ATM price ----
     const double x0 = std::log(S0 / K);
-    double best_dist = 1e30, price_atm = 0.0;
-    for (int i = 0; i < ndof; i++) {
-        if (std::abs(x_coords[i] - x0) < best_dist) {
-            best_dist  = std::abs(x_coords[i] - x0);
-            price_atm  = u_h[i];
-        }
-    }
+    double price_atm = interp_at(u_h, x_coords, x0);
     double eu_price_atm = bs_call(S0, K, r, sigma, T);
-    std::cout << "\n--- Results ---\n" << std::scientific << std::setprecision(4)
+
+    std::cout << "\n--- Results ---\n" << std::scientific << std::setprecision(6)
               << "ATM barrier price (" << monitoring_type << "): " << price_atm << "\n"
               << "ATM European call price:                       " << eu_price_atm << "\n"
               << "barrier <= european: "
               << (price_atm <= eu_price_atm + 1e-6 ? "PASS" : "FAIL") << "\n";
 
+    // Machine-readable for Python
+    std::cout << std::setprecision(10)
+              << "PRICE_AT_S0=" << price_atm << "\n"
+              << "EUROPEAN_PRICE=" << eu_price_atm << "\n";
+
     // ---- Write solution CSV ----
+    // Column name reflects monitoring type for easy identification
+    std::string col_u = (monitoring_type == "none") ? "u_european" : ("u_" + monitoring_type);
     {
         std::string fname = "results/solutions/v5_barrier_" + monitoring_type + ".csv";
         std::ofstream f(fname);
-        f << "x,S,u_barrier,u_european\n" << std::setprecision(10);
+        // Header comment with paper convention
+        f << "# V5 discrete barrier call — " << monitoring_type << " monitoring\n"
+          << "# K=" << K << " T=" << T << " r=" << r << " sigma=" << sigma
+          << " S_lower=" << S_lower << " S_upper=" << S_upper << "\n"
+          << "# N_monitoring=" << (int)monitoring_taus.size() << "\n"
+          << std::setprecision(10);
+        f << "x,S," << col_u << "\n";
         for (int i = 0; i < ndof; i++) {
-            double xi  = x_coords[i];
-            double Si  = K * std::exp(xi);
-            double ueu = bs_call(Si, K, r, sigma, T);
-            f << xi << "," << Si << "," << u_h[i] << "," << ueu << "\n";
+            double xi = x_coords[i];
+            double Si = K * std::exp(xi);
+            f << xi << "," << Si << "," << u_h[i] << "\n";
         }
         std::cout << "Wrote " << fname << "\n";
     }
 
     // ---- Write near-barrier Greeks CSV ----
+    // Domain: S in [90, 130] for paper figures
     {
-        const double xl_diag = cfg.x_lower() - 0.5;
-        const double xu_diag = cfg.x_upper() + 0.5;
-        std::ofstream f("results/greeks/v5_barrier_greeks.csv");
-        f << "x,S,u,Delta,Gamma\n" << std::setprecision(10);
+        const double x_lo_fig = std::log(90.0 / K);
+        const double x_hi_fig = std::log(130.0 / K);
+        std::string greek_fname = "results/greeks/v5_barrier_greeks_" + monitoring_type + ".csv";
+        std::ofstream fg(greek_fname);
+        fg << "# V5 near-barrier Greeks — " << monitoring_type << " monitoring\n"
+           << "# K=" << K << " T=" << T << " r=" << r << " sigma=" << sigma
+           << " S_lower=" << S_lower << " S_upper=" << S_upper << "\n";
+        fg << "S,x,u,Delta,Gamma,monitoring\n" << std::setprecision(10);
         for (int i = 1; i < ndof-1; i++) {
             double xi = x_coords[i];
-            if (xi < xl_diag || xi > xu_diag) continue;
+            if (xi < x_lo_fig || xi > x_hi_fig) continue;
             double Si    = K * std::exp(xi);
             double dudx  = (u_h[i+1] - u_h[i-1]) / (2.0*h);
             double d2udx2= (u_h[i+1] - 2.0*u_h[i] + u_h[i-1]) / (h*h);
             double delta = dudx / Si;
             double gamma = (d2udx2 - dudx) / (Si * Si);
-            f << xi << "," << Si << "," << u_h[i] << ","
-              << delta << "," << gamma << "\n";
+            fg << Si << "," << xi << "," << u_h[i] << ","
+               << delta << "," << gamma << "," << monitoring_type << "\n";
         }
-        std::cout << "Wrote results/greeks/v5_barrier_greeks.csv\n";
+        std::cout << "Wrote " << greek_fname << "\n";
     }
 
     return 0;

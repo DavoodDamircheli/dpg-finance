@@ -1,0 +1,9 @@
+# V5 barrier monitoring frequency study
+# K=100.0, T=0.5, r=0.1, sigma=0.2, S_lower=95.0, S_upper=125.0, S0=100
+# Price ordering: daily <= weekly <= monthly <= european
+# Ordering assertion: PASS
+monitoring_type,n_monitoring_dates,price_at_S0,european_price,price_ratio_to_european
+none,0,8.26676874,8.26676874,1.0
+monthly,6,4.723343059,8.26676874,0.5713650892573536
+weekly,26,3.082899901,8.26676874,0.3729268348929282
+daily,125,2.538470212,8.26676874,0.3070692179541967
