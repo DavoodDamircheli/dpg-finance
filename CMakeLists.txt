@@ -156,6 +156,9 @@ add_dpg_uw_executable(main_european_2d_basket_mpi
 add_dpg_executable(main_barrier_1d
     src/main_barrier_1d.cpp)
 
+add_dpg_executable(main_asian_1d
+    src/main_asian_1d.cpp)
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -192,6 +195,10 @@ add_dpg_uw_test(test_mpi_consistency    tests/test_mpi_consistency.cpp)
 add_dpg_test(test_diffusion_tensor          tests/test_diffusion_tensor.cpp)
 add_dpg_test(test_barrier_projection        tests/test_barrier_projection.cpp)
 add_dpg_test(test_barrier_ordering          tests/test_barrier_ordering.cpp)
+add_dpg_test(test_asian_coefficients        tests/test_asian_coefficients.cpp)
+add_dpg_test(test_asian_payoff              tests/test_asian_payoff.cpp)
+add_dpg_test(test_asian_delta               tests/test_asian_delta.cpp)
+add_dpg_test(test_asian_mc_consistency      tests/test_asian_mc_consistency.cpp)
 
 # Timeouts (seconds) for tests that run a DPG solve
 set_tests_properties(test_ultraweak_convergence PROPERTIES TIMEOUT 300)
@@ -202,3 +209,7 @@ set_tests_properties(test_active_set                    PROPERTIES TIMEOUT  30)
 set_tests_properties(test_american_dominates_european   PROPERTIES TIMEOUT  60)
 set_tests_properties(test_barrier_projection            PROPERTIES TIMEOUT  20)
 set_tests_properties(test_barrier_ordering              PROPERTIES TIMEOUT 120)
+set_tests_properties(test_asian_coefficients            PROPERTIES TIMEOUT  10)
+set_tests_properties(test_asian_payoff                  PROPERTIES TIMEOUT  10)
+set_tests_properties(test_asian_delta                   PROPERTIES TIMEOUT  60)
+set_tests_properties(test_asian_mc_consistency          PROPERTIES TIMEOUT 120)

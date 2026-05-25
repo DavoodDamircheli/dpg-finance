@@ -129,6 +129,10 @@ include/
                    BSCoefficients2D.hpp  — 2D tensor coefficients: BSDiffusion2D,
                                            BSDiffusionInverse2D, BSConvection2D,
                                            MinEigenvalueA (all in dpg_finance namespace)
+                   AsianCoefficients.hpp — variable-coeff wrappers for Rogers-Shi Asian PDE:
+                                           AsianDiffusion (sigma^2/2*z^2, zero at z=0),
+                                           AsianConvection (1/T+(r+sigma^2)*z, after IBP),
+                                           AsianPayoff (max{0,-z})
 config/            JSON configs for each solver (simple key-value; parsed by inline jd/ji)
 results/
   convergence/     v{N}_*.csv — h-refinement tables
@@ -178,6 +182,7 @@ A is positive definite iff |rho| < 1. Assert this before solving.
 - V4: 2D basket option, MPI            [~] Parts A+B coded; needs container build+run  ← paper-critical
 - V3: American put, active-set LCP     [x] DONE — primal DPG + PDAS, exercise boundary extracted
 - V5: Barrier option, monitoring       [x] DONE — discrete double-barrier call, daily/weekly monitoring
+- V6: Asian option, Rogers-Shi 1D PDE  [x] DONE — degenerate primal DPG, MC benchmark, Asian Greeks
 
 ## Key Results
 
@@ -208,6 +213,18 @@ A is positive definite iff |rho| < 1. Assert this before solving.
              results/convergence/v5_daily_vs_weekly_comparison.csv
   - Tests: test_barrier_projection (knockout correctness), test_barrier_ordering (pricing inequality)
   - Comparison script: python3 scripts/run_barrier_comparison.py
+- V6: Asian option, Rogers-Shi substitution z=(K-A(t)/T)/S(t), degenerate primal DPG H1(1)
+  - PDE: dU/dtau - (sigma^2/2)*z^2*U_zz + (1/T + r*z)*U_z = 0 (no reaction term)
+  - Degenerate diffusion (sigma^2/2)*z^2 vanishes at z=0 inside domain [-2,2]
+  - Effective convection after IBP: 1/T + (r+sigma^2)*z (IBP adds sigma^2*z term)
+  - IC: max(0,-z); Left BC: natural; Right BC: U=0 at z=+2
+  - Price = S0 * U(T, z0) where z0 = K/S0; Delta = U(z0) - z0*U_z(z0)
+  - Coefficients: include/dpg/AsianCoefficients.hpp (AsianDiffusion, AsianConvection, AsianPayoff)
+  - Tests: test_asian_coefficients, test_asian_payoff, test_asian_delta, test_asian_mc_consistency
+  - Scripts: run_asian_mc_benchmark.py, run_asian_convergence.py, plot_asian_solution.py, plot_asian_delta.py
+  - Outputs: results/solutions/v6_asian_solution.csv, results/solutions/v6_asian_price_vs_S0.csv
+             results/greeks/v6_asian_delta.csv, results/convergence/v6_asian_convergence.csv
+             results/convergence/v6_asian_mc_benchmark.csv, results/convergence/v6_asian_spatial.csv
 - V4a: 2D basket DPG solver complete (src/main_european_2d_basket_mpi.cpp)
   - True 2D mesh N_x×N_y quads; tensor diffusion A, vector convection b=(b1,b2)
   - BSDiffusion2D + BSDiffusionInverse2D from include/dpg/BSCoefficients2D.hpp
