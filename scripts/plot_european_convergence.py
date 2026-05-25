@@ -70,50 +70,56 @@ def plot_spatial(ax_l2, ax_linf=None):
         print("[WARN] No spatial convergence CSVs found — skipping Figure A1")
         return
 
+    # Normalise absolute L2 error by the exact ATM price to get a
+    # dimensionless relative error suitable for the log-log convergence plot.
+    def rel_l2(data):
+        l2  = data["L2_error"].astype(float)
+        ref = data["exact_price_at_S0"].astype(float)
+        return l2 / ref
+
+    def rel_linf(data):
+        li  = data["Linf_error"].astype(float)
+        ref = data["exact_price_at_S0"].astype(float)
+        return li / ref
+
     # V1
     if v1 is not None:
-        h1 = v1["h"].astype(float)
-        l2_1 = v1["L2_error"].astype(float)
-        ax_l2.loglog(h1, l2_1, "o-b", linewidth=2, markersize=6,
+        h1  = v1["h"].astype(float)
+        rl1 = rel_l2(v1)
+        ax_l2.loglog(h1, rl1, "o-b", linewidth=2, markersize=6,
                      label="V1 primal H1(p=1)")
         if ax_linf is not None:
-            inf_1 = v1["Linf_error"].astype(float)
-            ax_linf.loglog(h1, inf_1, "o-b", linewidth=2, markersize=6,
+            ax_linf.loglog(h1, rel_linf(v1), "o-b", linewidth=2, markersize=6,
                            label="V1 primal H1(p=1)")
 
     # V2
     if v2 is not None:
-        h2 = v2["h"].astype(float)
-        l2_2 = v2["L2_error"].astype(float)
-        ax_l2.loglog(h2, l2_2, "s-r", linewidth=2, markersize=6,
+        h2  = v2["h"].astype(float)
+        rl2 = rel_l2(v2)
+        ax_l2.loglog(h2, rl2, "s-r", linewidth=2, markersize=6,
                      label="V2 ultraweak L2(p=1)")
         if ax_linf is not None:
-            inf_2 = v2["Linf_error"].astype(float)
-            ax_linf.loglog(h2, inf_2, "s-r", linewidth=2, markersize=6,
+            ax_linf.loglog(h2, rel_linf(v2), "s-r", linewidth=2, markersize=6,
                            label="V2 ultraweak L2(p=1)")
 
-    # Reference slopes: O(h^2) and O(h^3)
-    h_ref = np.array([0.25, 1.5])
+    # Reference slopes anchored at the coarsest V1 point
     for ax in ([ax_l2] if ax_linf is None else [ax_l2, ax_linf]):
-        # Get a rough anchor from the first V1 point or V2 point
-        ylim = ax.get_ylim()
         try:
             anchor_h = h1[0] if v1 is not None else h2[0]
-            anchor_y = (v1["L2_error"].astype(float)[0]
-                        if v1 is not None else v2["L2_error"].astype(float)[0])
+            anchor_y = rl1[0] if v1 is not None else rel_l2(v2)[0]
         except Exception:
             continue
+        h_ref = np.array([anchor_h / 8, anchor_h * 2])
         c2 = anchor_y / anchor_h**2
         c3 = anchor_y / anchor_h**3
-        h_ref2 = np.array([anchor_h / 4, anchor_h * 4])
-        ax.loglog(h_ref2, c2 * h_ref2**2, "k--", linewidth=1, alpha=0.6,
+        ax.loglog(h_ref, c2 * h_ref**2, "k--", linewidth=1, alpha=0.6,
                   label=r"$O(h^2)$")
-        ax.loglog(h_ref2, c3 * h_ref2**3, "k:",  linewidth=1, alpha=0.6,
+        ax.loglog(h_ref, c3 * h_ref**3, "k:",  linewidth=1, alpha=0.6,
                   label=r"$O(h^3)$")
 
     for ax in ([ax_l2] if ax_linf is None else [ax_l2, ax_linf]):
         ax.set_xlabel(r"mesh size $h$", fontsize=12)
-        ax.set_ylabel(r"$L^2$ error", fontsize=12)
+        ax.set_ylabel(r"Relative $L^2$ error $\|e_h\|_{L^2} / u_{\rm ATM}$", fontsize=11)
         ax.legend(fontsize=10)
         ax.grid(True, which="both", alpha=0.3)
 
@@ -139,36 +145,52 @@ def fig_A2():
 
     dt = data["dt"].astype(float)
 
+    # Normalise by exact ATM price to keep units consistent with spatial plot.
+    # V1 exact = 10.4506 (sigma=0.2, r=0.05, T=1, K=100, N_x=256 fine mesh)
+    # V2 exact = same; use fixed value since CSV may not store it per row.
+    V1_EXACT_ATM = 10.45058357
+    V2_EXACT_ATM = 10.45058357
+
     fig, ax = plt.subplots(figsize=(7, 5))
 
+    v1_plotted = False
     if "V1_L2_error" in data.dtype.names:
-        l2_v1 = data["V1_L2_error"].astype(float)
+        l2_v1 = data["V1_L2_error"].astype(float) / V1_EXACT_ATM
         mask = np.isfinite(l2_v1) & (l2_v1 > 0)
         if mask.any():
             ax.loglog(dt[mask], l2_v1[mask], "o-b", linewidth=2, markersize=6,
-                      label="V1 primal")
+                      label=r"V1 primal ($N_x=256$)")
+            v1_plotted = True
 
     if "V2_L2_error" in data.dtype.names:
-        l2_v2 = data["V2_L2_error"].astype(float)
+        l2_v2 = data["V2_L2_error"].astype(float) / V2_EXACT_ATM
         mask = np.isfinite(l2_v2) & (l2_v2 > 0)
         if mask.any():
             ax.loglog(dt[mask], l2_v2[mask], "s-r", linewidth=2, markersize=6,
-                      label="V2 ultraweak")
+                      label=r"V2 ultraweak ($N_x=64$)")
+            # Draw the spatial-error floor for V2 at N_x=64 (rel L2 ≈ 0.029)
+            v2_floor = float(l2_v2[mask].max())
+            ax.axhline(v2_floor, color="r", lw=1, ls=":", alpha=0.5)
+            ax.annotate("spatial floor\n($N_x=64$)",
+                        xy=(dt[mask].min(), v2_floor),
+                        xytext=(dt[mask].min() * 2.5, v2_floor * 1.4),
+                        fontsize=8, color="r",
+                        arrowprops=dict(arrowstyle="->", color="r", lw=0.8))
 
-    # O(dt) reference
-    dt_ref = np.array([dt.min() / 2, dt.max() * 2])
-    try:
-        l2_anchor = data["V1_L2_error"].astype(float)
-        mask = np.isfinite(l2_anchor) & (l2_anchor > 0)
-        if mask.any():
-            c1 = l2_anchor[mask][-1] / dt[mask][-1]
+    # O(Δt) reference anchored at the coarsest dt, V1 value
+    if v1_plotted:
+        dt_ref = np.array([dt.min() / 2, dt.max() * 2])
+        l2_v1_all = data["V1_L2_error"].astype(float) / V1_EXACT_ATM
+        mask_fin = np.isfinite(l2_v1_all) & (l2_v1_all > 0)
+        if mask_fin.any():
+            c1 = l2_v1_all[mask_fin][0] / dt[mask_fin][0]
             ax.loglog(dt_ref, c1 * dt_ref, "k--", linewidth=1, alpha=0.6,
                       label=r"$O(\Delta t)$")
-    except Exception:
-        pass
 
-    ax.set_xlabel(r"time step $\Delta t$", fontsize=12)
-    ax.set_ylabel(r"$L^2$ error", fontsize=12)
+    # Convention: coarser Δt on the left, finer on the right → invert x-axis
+    ax.invert_xaxis()
+    ax.set_xlabel(r"time step $\Delta t$ (decreasing $\rightarrow$ refinement)", fontsize=11)
+    ax.set_ylabel(r"Relative $L^2$ error $\|e_h\|_{L^2} / u_{\rm ATM}$", fontsize=11)
     ax.set_title("European call: temporal $L^2$ convergence", fontsize=13)
     ax.legend(fontsize=10)
     ax.grid(True, which="both", alpha=0.3)

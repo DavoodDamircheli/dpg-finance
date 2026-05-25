@@ -29,6 +29,9 @@
     $8$ & $0.7500$ & $189$ & $28.07463$ & $2.54\times10^{1}$ & $2.41$ \\
     $16$ & $0.3750$ & $373$ & $15.84402$ & $5.38\times10^{0}$ & $2.24$ \\
     $32$ & $0.1875$ & $741$ & $11.94657$ & $1.44\times10^{0}$ & $1.90$ \\
+    $64$ & $0.0938$ & $1477$ & $10.85197$ & $3.00\times10^{-1}$ & $2.26$ \\
+    $128$ & $0.0469$ & $2949$ & $10.55529$ & $7.76\times10^{-2}$ & $1.95$ \\
+    $256$ & $0.0234$ & $5893$ & $10.46095$ & $1.53\times10^{-2}$ & $2.34$ \\
     \hline
   \end{tabular}
 \end{table}
@@ -36,7 +39,9 @@
 % --- Table A3 ---
 \begin{table}[htbp]
   \centering
-  \caption{European call temporal convergence (backward Euler). V1: $N_x=256$. V2: $N_x=64$.}
+  \caption{European call temporal convergence (backward Euler). V1: $N_x=256$. V2: $N_x=64$.
+           V2 error increases with $N_t$ refinement because the spatial error floor ($\approx 0.029$ relative
+           at $N_x=64$) dominates; temporal and spatial errors partially cancel at coarse $N_t$.}
   \label{tab:temporal}
   \begin{tabular}{rccccc}
     \hline
@@ -63,7 +68,9 @@
          $r=0.05$, $T=1$, $K=100$, $N_t=1000$).
          $\Delta_{\rm DPG}=\vartheta/S$ (primary trial field);
          $\Gamma_{\rm DPG}$ by centred FD of $\Delta$ in $S$.
-         EOC computed as $\log_2(\text{err}_{i-1}/\text{err}_i)$.}
+         EOC computed as $\log_2(\text{err}_{i-1}/\text{err}_i)$.
+         Note: $\Gamma$ shows no convergence due to the $L^2(0)$ piecewise-constant trial space;
+         higher-order reconstruction is required.}
 \label{tab:european_greeks}
 \begin{tabular}{r r | r r r | r r r}
 \hline

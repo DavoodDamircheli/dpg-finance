@@ -101,12 +101,14 @@ def plot_figB1():
             continue
         dpg   = data[key_dpg][mask]
         exact = data[key_exact][mask]
-        ax.plot(Sm, dpg,   color=color, ls="-",  lw=2.0, label=f"DPG {label}")
-        ax.plot(Sm, exact, color=color, ls="--", lw=1.2, alpha=0.8,
+        # Exact: thin dashed; DPG: thick solid — clearly distinct
+        ax.plot(Sm, exact, color=color, ls="--", lw=1.0, alpha=0.7,
                 label=f"Exact {label}")
+        ax.plot(Sm, dpg,   color=color, ls="-",  lw=2.2,
+                label=f"DPG {label}")
 
     ax.set_xlabel("Stock Price $S$", fontsize=12)
-    ax.set_ylabel("Delta $\\Delta$", fontsize=12)
+    ax.set_ylabel(r"$\Delta = \partial V/\partial S$", fontsize=12)
     ax.set_title("European Call Delta (V2 Ultraweak DPG, $\\sigma=0.20$)", fontsize=12)
     ax.legend(ncol=2, fontsize=8, loc="upper left")
     ax.grid(True, alpha=0.3)
@@ -135,14 +137,22 @@ def plot_figB2():
             continue
         dpg   = data[key_dpg][mask]
         exact = data[key_exact][mask]
-        ax.plot(Sm, dpg,   color=color, ls="-",  lw=2.0, label=f"DPG {label}")
-        ax.plot(Sm, exact, color=color, ls="--", lw=1.2, alpha=0.8,
+        ax.plot(Sm, exact, color=color, ls="--", lw=1.0, alpha=0.7,
                 label=f"Exact {label}")
+        ax.plot(Sm, dpg,   color=color, ls="-",  lw=2.2,
+                label=f"DPG {label}")
 
     ax.set_xlabel("Stock Price $S$", fontsize=12)
-    ax.set_ylabel("Gamma $\\Gamma$", fontsize=12)
+    ax.set_ylabel(r"$\Gamma = \partial^2 V/\partial S^2$", fontsize=12)
     ax.set_title("European Call Gamma (V2 Ultraweak DPG, $\\sigma=0.20$)", fontsize=12)
     ax.legend(ncol=2, fontsize=8, loc="upper right")
+    ax.text(0.03, 0.97,
+            "Note: DPG Gamma underestimates peak\n"
+            "due to $L^2(0)$ trial space limitation.\n"
+            "Higher-order reconstruction needed.",
+            transform=ax.transAxes, fontsize=7.5,
+            va="top", ha="left",
+            bbox=dict(boxstyle="round,pad=0.3", fc="lightyellow", ec="gray", alpha=0.9))
     ax.grid(True, alpha=0.3)
     ax.set_xlim(S_LO, S_HI)
     save_fig(fig, "figB2_european_gamma")
@@ -159,54 +169,54 @@ def plot_figB3():
 
     sigmas = np.unique(data["sigma"])
     colors_sigma = {0.15: "#1f77b4", 0.20: "#d62728"}
-    markers = {"delta": "o", "gamma": "s"}
 
+    # Two-panel layout: left = Delta (converging), right = Gamma (flat — L²(0) limitation)
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=False)
 
     for sigma_val in sigmas:
-        mask = data["sigma"] == sigma_val
-        h_vals     = data["h"][mask]
-        delta_L2   = data["delta_L2_error"][mask]
-        gamma_L2   = data["gamma_L2_error"][mask]
-
-        # Sort by h
-        idx = np.argsort(h_vals)
-        h_s = h_vals[idx]
-        dL2 = delta_L2[idx]
-        gL2 = gamma_L2[idx]
+        mask  = data["sigma"] == sigma_val
+        h_s   = data["h"][mask]
+        dL2   = data["delta_L2_error"][mask]
+        gL2   = data["gamma_L2_error"][mask]
+        idx   = np.argsort(h_s)
+        h_s, dL2, gL2 = h_s[idx], dL2[idx], gL2[idx]
 
         color = colors_sigma.get(sigma_val, "gray")
         lbl   = f"$\\sigma={sigma_val:.2f}$"
-
         axes[0].loglog(h_s, dL2, "o-", color=color, lw=2, ms=7, label=lbl)
         axes[1].loglog(h_s, gL2, "s-", color=color, lw=2, ms=7, label=lbl)
 
-    # Reference slopes
-    for ax, title, key in [(axes[0], "Delta $L^2$ Error", "delta"),
-                            (axes[1], "Gamma $L^2$ Error", "gamma")]:
-        data_all = load_csv(GREEKS_DIR / "v1_v2_european_greeks.csv")
-        if data_all is not None:
-            h_ref = np.array(sorted(np.unique(data_all["h"])))
-            if len(h_ref) >= 2:
-                # O(h) and O(h^2) reference lines anchored at coarsest point
-                h0 = h_ref[-1]
-                if key == "delta":
-                    err_key = "delta_L2_error"
-                else:
-                    err_key = "gamma_L2_error"
-                # Anchor at the coarsest mesh value for sigma=0.20
-                mask02 = data_all["sigma"] == 0.20
-                if mask02.any():
-                    idx_coarse = np.argmax(data_all["h"][mask02])
-                    e0 = data_all[err_key][mask02][idx_coarse]
-                    ax.loglog(h_ref, e0 * (h_ref/h0)**1, "k:",  lw=1, label=r"$O(h)$")
-                    ax.loglog(h_ref, e0 * (h_ref/h0)**2, "k--", lw=1, label=r"$O(h^2)$")
+    # --- Delta panel: reference slopes ---
+    mask02 = data["sigma"] == 0.20
+    if mask02.any():
+        h_ref = np.array(sorted(np.unique(data["h"][mask02])))
+        h0    = h_ref[-1]
+        e0_d  = data["delta_L2_error"][mask02][np.argmax(data["h"][mask02])]
+        axes[0].loglog(h_ref, e0_d * (h_ref/h0)**1, "k:",  lw=1, label=r"$O(h)$")
+        axes[0].loglog(h_ref, e0_d * (h_ref/h0)**2, "k--", lw=1, label=r"$O(h^2)$")
 
-        ax.set_xlabel("Mesh spacing $h$", fontsize=11)
-        ax.set_ylabel(title, fontsize=11)
-        ax.set_title(title, fontsize=11)
-        ax.legend(fontsize=9)
-        ax.grid(True, which="both", alpha=0.3)
+    axes[0].set_xlabel("Mesh spacing $h$", fontsize=11)
+    axes[0].set_ylabel(r"$L^2$ error", fontsize=11)
+    axes[0].set_title(r"$\Delta$ $L^2$ Error (V2, converging)", fontsize=11)
+    axes[0].legend(fontsize=9)
+    axes[0].grid(True, which="both", alpha=0.3)
+
+    # --- Gamma panel: flat lines + explanation ---
+    axes[1].set_xlabel("Mesh spacing $h$", fontsize=11)
+    axes[1].set_ylabel(r"$L^2$ error", fontsize=11)
+    axes[1].set_title(r"$\Gamma$ $L^2$ Error (V2, $L^2(0)$ limitation)", fontsize=11)
+    axes[1].legend(fontsize=9)
+    axes[1].grid(True, which="both", alpha=0.3)
+    axes[1].text(0.5, 0.18,
+                 "Gamma does not converge with mesh\n"
+                 "refinement because the V2 $L^2(0)$ trial\n"
+                 "variable $\\sigma_h$ is piecewise-constant.\n"
+                 "FD of a piecewise-constant field gives\n"
+                 "zero-order accuracy for $\\partial\\sigma/\\partial x$.\n"
+                 "Higher-order reconstruction required.",
+                 transform=axes[1].transAxes, fontsize=8.5,
+                 va="bottom", ha="center",
+                 bbox=dict(boxstyle="round,pad=0.4", fc="lightyellow", ec="goldenrod", alpha=0.95))
 
     fig.suptitle("European Greek Error Convergence (V2 Ultraweak DPG, $N_t=1000$)",
                  fontsize=12)
