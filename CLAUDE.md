@@ -243,6 +243,29 @@ A is positive definite iff |rho| < 1. Assert this before solving.
   - Benchmark: S0=K (ATM), K∈{90,95,100,105,110}; warns if DPG outside MC 95% CI
   - Sweep: rho∈{-0.8,-0.5,-0.2,0,0.2,0.5,0.8}; MinEigenvalueA column for paper theory
 
+## Phase A: European 1D convergence study (scripts ready, needs container run)
+
+V1 and V2 solvers modified to emit extended CSV rows and ATM price:
+  - V1 convergence CSV columns: N_x,h,ndof,price_at_S0,exact_price_at_S0,L2_error,Linf_error
+  - V2 convergence CSV columns: N_x,h,ndof_u,ndof_sigma,ndof_trace,total_ndof,
+                                  price_at_S0,exact_price_at_S0,L2_error,Linf_error
+  - Both solvers accept --csv-path <file> to redirect the convergence CSV
+  - Both print ATM_PRICE=<val>  EXACT_ATM=<val> to stdout
+
+Run script:
+  python3 scripts/run_phaseA_convergence.py [--np 4] [--skip-v2] [--only A1,A2]
+  Produces: v1_spatial_primal.csv, v2_spatial_ultraweak.csv,
+            v1_v2_temporal.csv, v1_v2_spatial_combined.csv  (all in results/convergence/)
+
+Plotting:
+  python3 scripts/plot_european_convergence.py
+  Produces: vA_spatial_convergence.{pdf,png}, vA_temporal_convergence.{pdf,png},
+            vA_solution_comparison.{pdf,png}  (in results/figures/)
+
+LaTeX tables:
+  python3 scripts/generate_table_A.py
+  Appends Tables A1/A2/A3 to results/paper_tables.tex
+
 ---
 
 ## Output convention

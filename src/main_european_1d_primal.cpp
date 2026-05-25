@@ -79,11 +79,13 @@ static double payoff_call(const Vector& xv) {
 int main(int argc, char* argv[]) {
     // ---- Command-line options ----
     const char* config_file = "config/european_1d_primal.json";
+    const char* csv_path    = "results/convergence/v1_spatial_primal.csv";
     int  extra_refine = 0;
     bool verbose      = false;
 
     OptionsParser args(argc, argv);
     args.AddOption(&config_file, "-c", "--config", "JSON config file");
+    args.AddOption(&csv_path, "--csv-path", "--csv-path", "Convergence CSV output path");
     args.AddOption(&extra_refine, "-r", "--refine",
                    "Additional uniform refinements (doubles N_x each time)");
     args.AddOption(&verbose, "-v", "--verbose", "-no-v", "--no-verbose",
@@ -244,7 +246,8 @@ int main(int argc, char* argv[]) {
               << "  L2_err=" << L2err
               << "  Linf_err=" << Linferr << "\n";
 
-    // ---- Write solution CSV ----
+    // ---- Write solution CSV and capture ATM price ----
+    double price_at_S0 = 0.0;
     {
         std::ofstream f("results/solutions/v1_call_final.csv");
         f << "x,S,u_h,u_exact,error\n" << std::setprecision(10);
@@ -255,19 +258,25 @@ int main(int argc, char* argv[]) {
             const double ue_i = bs_call(S_i, K, r, sigma, T);
             f << x_i << "," << S_i << "," << uh_i << ","
               << ue_i << "," << std::abs(uh_i - ue_i) << "\n";
+            if (std::abs(x_i) < h * 0.5001)   // node nearest x=0 (S=K, ATM)
+                price_at_S0 = uh_i;
         }
     }
+    const double exact_price_at_S0 = bs_call(K, K, r, sigma, T);
+    std::cout << "ATM_PRICE=" << std::scientific << std::setprecision(6)
+              << price_at_S0 << "  EXACT_ATM=" << exact_price_at_S0 << "\n";
 
     // ---- Append convergence row ----
     {
-        const char* csv = "results/convergence/v1_spatial_primal.csv";
-        std::ifstream chk(csv);
+        std::ifstream chk(csv_path);
         chk.seekg(0, std::ios::end);
         bool new_file = !chk.is_open() || (chk.tellg() == 0);
-        std::ofstream f(csv, std::ios::app);
-        if (new_file) f << "N_x,h,ndof,L2_error,Linf_error\n";
+        std::ofstream f(csv_path, std::ios::app);
+        if (new_file)
+            f << "N_x,h,ndof,price_at_S0,exact_price_at_S0,L2_error,Linf_error\n";
         f << std::setprecision(10)
           << N_x << "," << h << "," << ndof << ","
+          << price_at_S0 << "," << exact_price_at_S0 << ","
           << L2err << "," << Linferr << "\n";
     }
 
