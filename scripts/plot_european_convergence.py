@@ -173,7 +173,7 @@ def fig_A2():
             ax.axhline(v2_floor, color="r", lw=1, ls=":", alpha=0.5)
             ax.annotate("spatial floor\n($N_x=64$)",
                         xy=(dt[mask].min(), v2_floor),
-                        xytext=(dt[mask].min() * 2.5, v2_floor * 1.4),
+                        xytext=(dt[mask].min() * 3.5, v2_floor * 0.55),
                         fontsize=8, color="r",
                         arrowprops=dict(arrowstyle="->", color="r", lw=0.8))
 
