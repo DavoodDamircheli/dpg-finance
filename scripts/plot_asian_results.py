@@ -219,7 +219,10 @@ def plot_figC3():
     ax.set_xlabel("Mesh spacing $h = 4/N_z$", fontsize=11)
     ax.set_ylabel("Absolute price error $|p_{N_z} - p_{\\rm ref}|$", fontsize=11)
     ax.set_title("Asian Option Spatial Convergence\n"
-                 r"(DPG $p=1$, $r=0.09$, $N_t=2000$, $K=S_0=100$)", fontsize=11)
+                 r"(DPG $p=1$, $r=0.09$, $N_t=2000$, $K=S_0=100$;"
+                 "\n"
+                 r"$\sigma=0.10$: $N_z=100$ omitted — inconsistent run config)",
+                 fontsize=10)
     ax.legend(fontsize=9)
     ax.grid(True, which="both", alpha=0.3)
 

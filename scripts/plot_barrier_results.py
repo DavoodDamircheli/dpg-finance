@@ -192,16 +192,16 @@ def fig_d3_d4():
             q_arr = greeks[mon][idx]
             label = f"{'Daily' if mon == 'daily' else 'Weekly'}"
             for ax, Slo, Shi in [(ax_main, 90, 130),
-                                  (ax_low, 94, 97),
-                                  (ax_high, 123, 127)]:
+                                  (ax_low, 90, 101),
+                                  (ax_high, 119, 130)]:
                 mask = (S_arr >= Slo) & (S_arr <= Shi)
                 if mask.any():
                     ax.plot(S_arr[mask], q_arr[mask], color=color, lw=1.5,
                             label=label)
 
         for ax, Slo, Shi in [(ax_main, 90, 130),
-                              (ax_low, 94, 97),
-                              (ax_high, 123, 127)]:
+                              (ax_low, 90, 101),
+                              (ax_high, 119, 130)]:
             ax.axvline(S_lower, color="0.4", ls=":", lw=0.9)
             ax.axvline(S_upper, color="0.6", ls=":", lw=0.9)
             ax.set_xlim(Slo, Shi)
@@ -213,8 +213,8 @@ def fig_d3_d4():
         ax_main.set_title(f"Near-Barrier {title_q} — Daily vs Weekly Monitoring",
                           fontsize=10)
         ax_main.legend(fontsize=9)
-        ax_low.set_title("Near $S_L$", fontsize=9)
-        ax_high.set_title("Near $S_U$", fontsize=9)
+        ax_low.set_title(f"Near $S_L={S_lower:.0f}$", fontsize=9)
+        ax_high.set_title(f"Near $S_U={S_upper:.0f}$", fontsize=9)
 
         fig.tight_layout()
         for ext in ["pdf", "png"]:
