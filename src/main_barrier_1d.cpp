@@ -112,9 +112,10 @@ static double interp_at(const Vector& u, const Vector& xc, double xi) {
 
 // ---------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    const char* config_file   = "config/barrier_1d.json";
-    const char* monitoring_ov = nullptr;   // optional CLI override for monitoring type
-    int  n_monitor_ov = 0;    // 0 = use convention or JSON; >0 overrides count
+    const char* config_file     = "config/barrier_1d.json";
+    const char* monitoring_ov   = nullptr;
+    const char* proj_check_csv  = nullptr;   // optional: write projection-check CSV
+    int  n_monitor_ov = 0;
     int  extra_refine = 0;
     bool verbose      = false;
 
@@ -128,6 +129,8 @@ int main(int argc, char* argv[]) {
                    "Additional uniform refinements (doubles N_x)");
     args.AddOption(&verbose,       "-v",  "--verbose",
                    "-no-v", "--no-verbose", "Print progress");
+    args.AddOption(&proj_check_csv, "--proj-check-csv", "--proj-check-csv",
+                   "Write projection-consistency CSV (tau,n_violated,max_violation)");
     args.Parse();
     if (!args.Good()) { args.PrintUsage(std::cout); return 1; }
 
@@ -321,6 +324,26 @@ int main(int argc, char* argv[]) {
             // Re-enforce BCs after knockout
             for (int k = 0; k < ess_tdofs.Size(); ++k)
                 u_h[ess_tdofs[k]] = x_bc[ess_tdofs[k]];
+
+            // Projection consistency check: interior nodes only (skip ess_tdofs)
+            if (proj_check_csv) {
+                double max_viol = 0.0;
+                int n_viol = 0;
+                const double xl = cfg.x_lower(), xu = cfg.x_upper();
+                // Build a quick lookup for essential DOFs
+                std::vector<bool> is_ess(ndof, false);
+                for (int k = 0; k < ess_tdofs.Size(); ++k) is_ess[ess_tdofs[k]] = true;
+                for (int i = 0; i < ndof; i++) {
+                    if (is_ess[i]) continue;   // boundary DOF: skip
+                    if (x_coords[i] < xl || x_coords[i] > xu) {
+                        double av = std::abs(u_h[i]);
+                        if (av > 0.0) { ++n_viol; max_viol = std::max(max_viol, av); }
+                    }
+                }
+                std::cout << "PROJ_CHECK tau=" << tau_n1
+                          << " n_viol=" << n_viol
+                          << " max_viol=" << std::scientific << max_viol << "\n";
+            }
         }
 
         if (verbose && (step % 50 == 0))
@@ -363,6 +386,13 @@ int main(int argc, char* argv[]) {
             f << xi << "," << Si << "," << u_h[i] << "\n";
         }
         std::cout << "Wrote " << fname << "\n";
+    }
+
+    // ---- Write projection-check CSV (if requested) ----
+    // The actual per-step data was printed to stdout as PROJ_CHECK lines;
+    // Python parses those. This section just notes the output path.
+    if (proj_check_csv) {
+        std::cout << "PROJ_CHECK_DONE path=" << proj_check_csv << "\n";
     }
 
     // ---- Write near-barrier Greeks CSV ----

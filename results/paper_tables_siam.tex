@@ -135,3 +135,35 @@ $N_z$ & $h$ & DPG price & MC benchmark & 95\% CI & abs err & rel err (\%) & EOC 
 \end{tabular}
 \end{table}
 }
+
+\newcommand{\tableBarrierRefined}{%
+% Table N4: Barrier spatial refinement at S=100
+% MC: n=1_000_000, seed=42
+\begin{table}[htbp]
+\centering
+\caption{Discrete double-barrier call spatial refinement at $S=100$, $K=100$, $T=0.5$, $r=0.1$, $\sigma=0.2$, $S_L=95$, $S_U=125$, $N_t=1000$. MC: $n=1{,}000{,}000$, seed=42. $\dagger$: MC noise flag --- abs.\ err.\ $<3\,\sigma_{\rm MC}$.}
+\label{tab:barrier-refined}
+\begin{tabular}{rrrrrrrr}
+\toprule
+$N_x$ & $h$ & DPG price & MC ref & 95\% CI & abs.\ err. & rel.\ err.\ (\%) & EOC \\
+\midrule
+\multicolumn{8}{l}{Weekly (26 dates), $n_{\rm mon}=26$} \\
+\midrule
+    50 & 0.1200 & 2.5028 & 2.9994 & [2.988,\ 3.011] & $4.966e-01$ & 16.56 & --- \\
+    100 & 0.0600 & 2.3064 & 2.9994 & [2.988,\ 3.011] & $6.931e-01$ & 23.11 & -0.48 \\
+    200 & 0.0300 & 3.0829 & 2.9994 & [2.988,\ 3.011] & $8.348e-02$ & 2.78 & 3.05 \\
+    400 & 0.0150 & 3.0793 & 2.9994 & [2.988,\ 3.011] & $7.991e-02$ & 2.66 & 0.06 \\
+    800 & 0.0075 & 3.0578 & 2.9994 & [2.988,\ 3.011] & $5.841e-02$ & 1.95 & 0.45 \\
+\midrule
+\multicolumn{8}{l}{Daily (125 dates), $n_{\rm mon}=125$} \\
+\midrule
+    50 & 0.1200 & 2.2574 & 2.4784 & [2.468,\ 2.489] & $2.210e-01$ & 8.92 & --- \\
+    100 & 0.0600 & 1.9328 & 2.4784 & [2.468,\ 2.489] & $5.456e-01$ & 22.01 & -1.30 \\
+    200 & 0.0300 & 2.5385 & 2.4784 & [2.468,\ 2.489] & $6.008e-02$ & 2.42 & 3.18 \\
+    400 & 0.0150 & 2.4565 & 2.4784 & [2.468,\ 2.489] & $2.187e-02$ & 0.88 & 1.46 \\
+    800 & 0.0075 & 2.4002 & 2.4784 & [2.468,\ 2.489] & $7.824e-02$ & 3.16 & -1.84 \\
+\midrule
+\bottomrule
+\end{tabular}
+\end{table}
+}

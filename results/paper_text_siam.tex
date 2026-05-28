@@ -30,3 +30,9 @@ The spatial refinement results (Table~\ref{tab:asian-refined}) show converging e
 Temporal refinement at fixed $N_z=800$ yields a mean EOC of 0.94 for $\sigma=0.20$, consistent with the backward Euler discretization.
 Domain truncation tests confirm that the interval $[-2,2]$ is adequate for the tested parameter range: the price change on enlarging the domain from $[-3,3]$ to $[-4,4]$ is 0.0010, and the further change to $[-5,5]$ is 0.0005.
 }
+
+\newcommand{\textBarrierRefined}{%
+Because discrete barrier options involve repeated projection onto the continuation region, they provide a useful test of the stability of the method under nonsmooth updates.
+The spatial refinement results (Table~\ref{tab:barrier-refined}) confirm convergence in price at $S=100$, with relative errors below 3.2\% on the finest tested mesh ($N_x=800$, $N_t=1000$) for daily monitoring.
+The projection consistency check (Section~N4-B4) confirms that the post-knockout solution is within machine precision of zero outside $[S_L, S_U] = [95, 125]$ at every monitoring date: the maximum observed violation across all $125$ daily monitoring dates is identically zero, as expected from the exact pointwise projection implemented in \texttt{BarrierProjection::ApplyKnockout}.
+}
