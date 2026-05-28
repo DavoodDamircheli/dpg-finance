@@ -1,0 +1,12 @@
+\newcommand{\textTemporalConvergence}{%
+To isolate the temporal discretization error, we fix a fine spatial mesh
+($N_x = 256$, domain $[-3,3]$) and vary only the number of time steps.
+Table~\ref{tab:temporal-clean} and Fig.~\ref{fig:temporal-clean} show
+first-order convergence in time, consistent with the backward Euler
+discretization, until the error reaches the spatial discretization floor.
+The pre-plateau temporal convergence rate is approximately $0.8504$ for $\sigma=0.20$.
+For $\sigma=0.05$ (convection-dominated regime), the temporal error constant
+is smaller than the spatial discretization floor at this mesh resolution,
+so first-order temporal convergence cannot be demonstrated independently of
+the spatial error in this regime.
+}

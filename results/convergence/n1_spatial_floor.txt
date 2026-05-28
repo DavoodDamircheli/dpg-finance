@@ -1,0 +1,2 @@
+Nx=256, eps_spatial_L2=1.535000e-02, eps_spatial_ATM=1.037000e-02
+Nt_floor=5000 (from V2 spatial convergence study)

@@ -498,18 +498,20 @@ int main(int argc, char* argv[])
         amg1->SetPrintLevel(0);
         HypreBoomerAMG* amg2 = new HypreBoomerAMG((HypreParMatrix&)A->GetBlock(2,2));
         amg2->SetPrintLevel(0);
-        HypreAMS* ams3 = new HypreAMS((HypreParMatrix&)A->GetBlock(3,3), hatf_fes);
-        ams3->SetPrintLevel(0);
+        // HypreAMS for RT_Trace (block 3) breaks down for Nx > ~300 on quasi-1D meshes.
+        // HypreBoomerAMG handles the RT_Trace mass matrix at all scales.
+        HypreBoomerAMG* amg3 = new HypreBoomerAMG((HypreParMatrix&)A->GetBlock(3,3));
+        amg3->SetPrintLevel(0);
 
         M.SetDiagonalBlock(0, amg0);
         M.SetDiagonalBlock(1, amg1);
         M.SetDiagonalBlock(2, amg2);
-        M.SetDiagonalBlock(3, ams3);
+        M.SetDiagonalBlock(3, amg3);
 
         CGSolver cg(MPI_COMM_WORLD);
         cg.SetRelTol(1e-10);
         cg.SetAbsTol(1e-14);
-        cg.SetMaxIter(2000);
+        cg.SetMaxIter(5000);
         cg.SetPrintLevel(0);
         cg.SetPreconditioner(M);
         cg.SetOperator(*A);

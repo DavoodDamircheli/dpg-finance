@@ -1,0 +1,2 @@
+sigma=0.20: pre-plateau EOC_L2=0.8504, N_t* = 16, plateau starts at N_t=16
+sigma=0.05: pre-plateau EOC_L2=nan, N_t* = 8, plateau starts at N_t=8
