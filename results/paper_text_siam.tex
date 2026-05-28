@@ -16,3 +16,17 @@ While the ultraweak formulation provides a direct approximation of the log-price
 We report a locally reconstructed Gamma obtained from polynomial recovery of element-average $\vartheta_h$ values using an over-determined least-squares fit over neighboring cells. LSQ-$P_2$ (9-cell stencil, 3 unknowns) achieves monotone EOC $\approx 1.64$, LSQ-$P_3$ (13-cell stencil, 4 unknowns) achieves EOC $\approx 1.65$, and a non-overlapping piecewise-$P_2$ macro-element projection ($L^2$-Proj-$P_2$) achieves mean EOC $\approx 1.60$.
 The consistent improvement of LSQ over the raw element slope confirms that smoothing element-average $\vartheta_h$ values before differentiation delivers more reliable and higher-order Gamma estimates than direct within-element differentiation.
 }
+
+{%
+The Asian option test is more demanding than the European benchmark because the Rogers--Shi reduction leads to a degenerate convection--diffusion equation with nonsmooth terminal data. We report refinement and truncation studies to separate discretization error from boundary and domain effects.
+The spatial refinement results (Table~\ref{tab:asian-refined}) show converging errors under mesh refinement, with relative errors below 2.6\% for the main ATM case ($\sigma=0.20$) on the finest tested mesh ($N_z=800$, $N_t=800$).
+Temporal refinement at fixed $N_z=800$ yields a mean EOC of 0.94 for $\sigma=0.20$, consistent with the backward Euler discretization.
+Domain truncation tests confirm that the interval $[-2,2]$ is adequate for the tested parameter range: the price change on enlarging the domain from $[-3,3]$ to $[-4,4]$ is 0.0000, and the further change to $[-5,5]$ is 0.0000.
+}
+
+\newcommand{\textAsianRefined}{%
+The Asian option test is more demanding than the European benchmark because the Rogers--Shi reduction leads to a degenerate convection--diffusion equation with nonsmooth terminal data. We report refinement and truncation studies to separate discretization error from boundary and domain effects.
+The spatial refinement results (Table~\ref{tab:asian-refined}) show converging errors under mesh refinement, with relative errors below 2.6\% for the main ATM case ($\sigma=0.20$) on the finest tested mesh ($N_z=800.0$, $N_t=800$).
+Temporal refinement at fixed $N_z=800$ yields a mean EOC of 0.94 for $\sigma=0.20$, consistent with the backward Euler discretization.
+Domain truncation tests confirm that the interval $[-2,2]$ is adequate for the tested parameter range: the price change on enlarging the domain from $[-3,3]$ to $[-4,4]$ is 0.0010, and the further change to $[-5,5]$ is 0.0005.
+}

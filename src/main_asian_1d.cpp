@@ -88,6 +88,7 @@ int main(int argc, char* argv[]) {
     int    N_t_ov   = -1;
     int    extra_refine = 0;
     bool   verbose      = false;
+    int    bc_mode      = 1;  // 1=right Diri only, 2=both ends Diri, 3=natural everywhere
 
     OptionsParser args(argc, argv);
     args.AddOption(&config_file,  "-c", "--config",       "JSON config file");
@@ -107,6 +108,8 @@ int main(int argc, char* argv[]) {
                    "Additional uniform refinements (doubles N_z each time)");
     args.AddOption(&verbose, "-v", "--verbose", "-no-v", "--no-verbose",
                    "Print progress every 20 steps");
+    args.AddOption(&bc_mode, "--bc-mode", "--bc-mode",
+                   "BC: 1=right Diri only (default), 2=both ends Diri, 3=natural everywhere");
     args.Parse();
     if (!args.Good()) { args.PrintUsage(std::cout); return 1; }
 
@@ -162,9 +165,10 @@ int main(int argc, char* argv[]) {
 
     // ---- Boundary markers ----
     // MakeCartesian1D: attr=1 (left), attr=2 (right)
-    // Right boundary is Dirichlet (U=0 at z=+2); left is natural.
-    Array<int> ess_bdr(mesh.bdr_attributes.Max()); ess_bdr  = 0;
-    ess_bdr[1] = 1;
+    Array<int> ess_bdr(mesh.bdr_attributes.Max()); ess_bdr = 0;
+    if (bc_mode == 1) { ess_bdr[1] = 1; }
+    else if (bc_mode == 2) { ess_bdr[0] = 1; ess_bdr[1] = 1; }
+    // bc_mode == 3: natural everywhere, ess_bdr stays zero
     Array<int> ess_tdofs;
     fes.GetEssentialTrueDofs(ess_bdr, ess_tdofs);
 
