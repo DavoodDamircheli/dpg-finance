@@ -33,3 +33,25 @@ $N_t$ & $\Delta t$ & $L^2$ error & EOC$_{L^2}$ & $L^\infty$ error & EOC$_{L^\inf
 \end{tabular}
 \end{table}
 }
+
+\newcommand{\tableGammaReconstruction}{%
+% Table N2: Gamma recovery — European call, sigma=0.20
+% Columns: Nx, h, Delta L2, Delta EOC, Gamma L2 (4 methods), Gamma EOC (4 methods)
+\begin{table}[htbp]
+\centering
+\caption{Gamma reconstruction convergence, V2 ultraweak DPG, European call ($\sigma=0.20$, $r=0.05$, $T=1$, $K=100$, domain $[-3,3]$, $N_t=512$). Raw Gamma uses elementwise FD of $\vartheta_h$; reconstructed methods (LSQ-$P_2$/P_3$, $L^2$-Proj-$P_2$) smooth $\vartheta_h$ before differentiating.}
+\label{tab:gamma-reconstruction}
+\begin{tabular}{rr|rr|rrrr|rrrr}
+\toprule
+$N_x$ & $h$ & \multicolumn{2}{c|}{Delta} & \multicolumn{4}{c|}{$\Gamma$ $L^2$ error} & \multicolumn{4}{c}{$\Gamma$ EOC} \\
+ & & $L^2$ & EOC & Raw & LSQ-$P_2$ & LSQ-$P_3$ & Proj-$P_2$ & Raw & LSQ-$P_2$ & LSQ-$P_3$ & Proj-$P_2$ \\
+\midrule
+    32 & 0.18750 & $5.98e-03$ & --- & $5.15e-03$ & $1.22e-02$ & $8.88e-03$ & $8.54e-03$ & --- & --- & --- & --- \\
+    64 & 0.09375 & $2.07e-03$ & $1.53$ & $9.87e-04$ & $4.56e-03$ & $2.35e-03$ & $3.41e-03$ & $2.38$ & $1.42$ & $1.92$ & $1.32$ \\
+    128 & 0.04688 & $5.79e-04$ & $1.84$ & $6.86e-04$ & $1.37e-03$ & $3.07e-04$ & $6.80e-04$ & $0.52$ & $1.74$ & $2.94$ & $2.33$ \\
+    256 & 0.02344 & $3.67e-04$ & $0.66$ & $2.89e-04$ & $3.65e-04$ & $3.88e-05$ & $1.84e-04$ & $1.25$ & $1.91$ & $2.98$ & $1.89$ \\
+    512 & 0.01172 & $2.04e-03$ & $-2.48$ & $1.53e-04$ & $1.30e-04$ & $9.03e-05$ & $1.00e-04$ & $0.91$ & $1.49$ & $-1.22$ & $0.87$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}

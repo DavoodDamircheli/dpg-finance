@@ -10,3 +10,9 @@ is smaller than the spatial discretization floor at this mesh resolution,
 so first-order temporal convergence cannot be demonstrated independently of
 the spatial error in this regime.
 }
+
+\newcommand{\textGammaRecovery}{%
+While the ultraweak formulation provides a direct approximation of the log-price derivative $\vartheta_h \approx \partial_x u$ and hence an efficient Delta approximation, Gamma requires differentiating this derivative variable. Differentiating the within-element polynomial slope of the $L^2$ trial variable $\vartheta_h$ (method Raw) shows irregular, non-monotone convergence across mesh levels, indicating sensitivity to how the DPG solve distributes element DOFs, and produces larger absolute errors at each mesh size than the reconstruction methods (Table~\ref{tab:gamma-reconstruction}, mean EOC $\approx 1.27$).
+We report a locally reconstructed Gamma obtained from polynomial recovery of element-average $\vartheta_h$ values using an over-determined least-squares fit over neighboring cells. LSQ-$P_2$ (9-cell stencil, 3 unknowns) achieves monotone EOC $\approx 1.64$, LSQ-$P_3$ (13-cell stencil, 4 unknowns) achieves EOC $\approx 1.65$, and a non-overlapping piecewise-$P_2$ macro-element projection ($L^2$-Proj-$P_2$) achieves mean EOC $\approx 1.60$.
+The consistent improvement of LSQ over the raw element slope confirms that smoothing element-average $\vartheta_h$ values before differentiation delivers more reliable and higher-order Gamma estimates than direct within-element differentiation.
+}

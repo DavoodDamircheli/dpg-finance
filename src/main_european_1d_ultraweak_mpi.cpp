@@ -123,6 +123,7 @@ struct GreeksData {
     std::vector<double> x, S, u;
     std::vector<double> delta_dpg, delta_exact;
     std::vector<double> gamma_dpg, gamma_exact;
+    std::vector<double> vtheta_dx_intra;  // within-element d(vartheta)/dx via 2-point sampling
 };
 
 // ---------------------------------------------------------------------------
@@ -138,6 +139,7 @@ int main(int argc, char* argv[])
     const char* csv_path    = "results/convergence/v2_spatial_ultraweak.csv";
     const char* greeks_csv  = nullptr;   // append row to Greek error table
     const char* dense_csv   = nullptr;   // dense solution CSV (all nodes, tau=T)
+    const char* n2_csv      = nullptr;   // Phase N2 raw-gradient CSV
     const char* snaps_delta = nullptr;   // delta snapshots CSV
     const char* snaps_gamma = nullptr;   // gamma snapshots CSV
     double sigma_override   = -1.0;      // negative → use JSON value
@@ -153,6 +155,8 @@ int main(int argc, char* argv[])
                    "Greek error table CSV (appended, one row per run)");
     args.AddOption(&dense_csv,     "--dense-csv", "--dense-csv",
                    "Dense solution+Greeks CSV at tau=T");
+    args.AddOption(&n2_csv,        "--n2-csv", "--n2-csv",
+                   "Phase N2 CSV: vartheta, within-element gradient, exact Greeks");
     args.AddOption(&snaps_delta,   "--snaps-delta", "--snaps-delta",
                    "Delta snapshot CSV (tau=0.1,0.25,0.5,1.0)");
     args.AddOption(&snaps_gamma,   "--snaps-gamma", "--snaps-gamma",
@@ -363,11 +367,16 @@ int main(int argc, char* argv[])
                               double tau_cur) -> GreeksData
     {
         const int ne = pmesh.GetNE();
-        std::vector<double> lx_v, lS_v, lu_v, ld_v;
+        std::vector<double> lx_v, lS_v, lu_v, ld_v, lvdxi_v;
         lx_v.reserve(ne); lS_v.reserve(ne);
-        lu_v.reserve(ne); ld_v.reserve(ne);
+        lu_v.reserve(ne); ld_v.reserve(ne); lvdxi_v.reserve(ne);
 
-        IntegrationPoint ipc; ipc.Set2(0.5, 0.5);
+        // Quarter-point integration points for within-element gradient
+        IntegrationPoint ipc, ipc_l, ipc_r;
+        ipc.Set2(0.5, 0.5);    // element center
+        ipc_l.Set2(0.25, 0.5); // left quarter point (xi=0.25)
+        ipc_r.Set2(0.75, 0.5); // right quarter point (xi=0.75)
+
         for (int i = 0; i < ne; i++) {
             ElementTransformation* tr = pmesh.GetElementTransformation(i);
             Vector phys(2); tr->Transform(ipc, phys);
@@ -376,8 +385,16 @@ int main(int argc, char* argv[])
             const double u_val  = u_gf.GetValue(i, ipc);
             const double sig_x  = sig_gf.GetValue(i, ipc, 1);  // diff*du/dx (vdim=1)
             const double delta  = (sig_x / diff) / Sc;          // du/dx / S = dV/dS
+
+            // Within-element d(vartheta)/dx via two-point sampling at xi=0.25, 0.75.
+            // Physical distance between quarter points = 0.5*h.
+            const double sig_x_l = sig_gf.GetValue(i, ipc_l, 1);
+            const double sig_x_r = sig_gf.GetValue(i, ipc_r, 1);
+            const double vtheta_dx_intra = (sig_x_r - sig_x_l) / (diff * 0.5 * h);
+
             lx_v.push_back(xc); lS_v.push_back(Sc);
             lu_v.push_back(u_val); ld_v.push_back(delta);
+            lvdxi_v.push_back(vtheta_dx_intra);
         }
 
         int local_n = (int)lx_v.size();
@@ -387,15 +404,17 @@ int main(int argc, char* argv[])
         int total_n = 0;
         for (int rk = 0; rk < nproc; rk++) { displs[rk] = total_n; total_n += all_n[rk]; }
 
-        std::vector<double> ax(total_n), aS(total_n), au(total_n), ad(total_n);
-        MPI_Gatherv(lx_v.data(), local_n, MPI_DOUBLE,
-                    ax.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_Gatherv(lS_v.data(), local_n, MPI_DOUBLE,
-                    aS.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_Gatherv(lu_v.data(), local_n, MPI_DOUBLE,
-                    au.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_Gatherv(ld_v.data(), local_n, MPI_DOUBLE,
-                    ad.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        std::vector<double> ax(total_n), aS(total_n), au(total_n), ad(total_n), avdxi(total_n);
+        MPI_Gatherv(lx_v.data(),    local_n, MPI_DOUBLE,
+                    ax.data(),    all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(lS_v.data(),    local_n, MPI_DOUBLE,
+                    aS.data(),    all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(lu_v.data(),    local_n, MPI_DOUBLE,
+                    au.data(),    all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(ld_v.data(),    local_n, MPI_DOUBLE,
+                    ad.data(),    all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(lvdxi_v.data(), local_n, MPI_DOUBLE,
+                    avdxi.data(), all_n.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
         GreeksData g;
         if (myid == 0) {
@@ -409,11 +428,13 @@ int main(int argc, char* argv[])
             g.delta_exact.resize(total_n, 0.0);
             g.gamma_dpg.resize(total_n, 0.0);
             g.gamma_exact.resize(total_n, 0.0);
+            g.vtheta_dx_intra.resize(total_n, 0.0);
 
             for (int i = 0; i < total_n; i++) {
                 int j = idx[i];
                 g.x[i] = ax[j]; g.S[i] = aS[j];
                 g.u[i] = au[j]; g.delta_dpg[i] = ad[j];
+                g.vtheta_dx_intra[i] = avdxi[j];
             }
 
             // Exact Greeks: Delta = N(d1), Gamma = phi(d1)/(S*sigma*sqrt(tau))
@@ -422,7 +443,7 @@ int main(int argc, char* argv[])
                     const double sq = sigma * std::sqrt(tau_cur);
                     const double d1 = (g.x[i] + (r + 0.5*sigma*sigma)*tau_cur) / sq;
                     g.delta_exact[i] = ncdf(d1);
-                    g.gamma_exact[i] = npdf(d1) / (g.S[i] * sigma * sq);
+                    g.gamma_exact[i] = npdf(d1) / (g.S[i] * sq);  // sq = sigma*sqrt(tau)
                 } else {
                     g.delta_exact[i] = (g.x[i] > 0.0) ? 1.0 : 0.0;
                     g.gamma_exact[i] = 0.0;
@@ -686,6 +707,28 @@ int main(int argc, char* argv[])
                << std::abs(gfinal.gamma_dpg[i] - gfinal.gamma_exact[i]) << "\n";
         }
         std::cout << "Dense CSV: " << dense_csv << " (" << gfinal.n << " pts)\n";
+    }
+
+    // =====================================================================
+    // Output: Phase N2 CSV (--n2-csv)
+    // Columns: x_c, S_c, vartheta_c, vtheta_dx_raw, delta_exact, gamma_exact
+    // vtheta_dx_raw = within-element d(vartheta)/dx via quarter-point sampling
+    // =====================================================================
+    if (myid == 0 && n2_csv != nullptr && gfinal.n > 0) {
+        std::ofstream fn2(n2_csv);
+        fn2 << "# Phase N2: vartheta and within-element gradient at tau=T\n"
+            << "# vartheta = du/dx = sigma_x/diff\n"
+            << "# vtheta_dx_raw = within-element d(vartheta)/dx via quarter-point FD\n"
+            << "# gamma_exact = phi(d1)/(S*sigma*sqrt(tau))  [corrected formula]\n"
+            << "x_c,S_c,vartheta_c,vtheta_dx_raw,delta_exact,gamma_exact\n"
+            << std::setprecision(10);
+        for (int i = 0; i < gfinal.n; i++) {
+            const double vartheta_c = gfinal.delta_dpg[i] * gfinal.S[i];
+            fn2 << gfinal.x[i] << "," << gfinal.S[i] << ","
+                << vartheta_c << "," << gfinal.vtheta_dx_intra[i] << ","
+                << gfinal.delta_exact[i] << "," << gfinal.gamma_exact[i] << "\n";
+        }
+        std::cout << "N2 CSV: " << n2_csv << " (" << gfinal.n << " pts)\n";
     }
 
     // =====================================================================
