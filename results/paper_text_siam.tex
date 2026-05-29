@@ -36,3 +36,15 @@ Because discrete barrier options involve repeated projection onto the continuati
 The spatial refinement results (Table~\ref{tab:barrier-refined}) confirm convergence in price at $S=100$, with relative errors below 3.2\% on the finest tested mesh ($N_x=800$, $N_t=1000$) for daily monitoring.
 The projection consistency check (Section~N4-B4) confirms that the post-knockout solution is within machine precision of zero outside $[S_L, S_U] = [95, 125]$ at every monitoring date: the maximum observed violation across all $125$ daily monitoring dates is identically zero, as expected from the exact pointwise projection implemented in \texttt{BarrierProjection::ApplyKnockout}.
 }
+
+{%
+To separate implementation verification from payoff-induced error, we first report a manufactured-solution test for the two-dimensional operator (Table~\ref{tab:manufactured}). The test uses the smooth exact solution $u_{\rm exact}=e^{-\tau}\sin(\pi x_1)\sin(\pi x_2)$ on the unit square $[-1,1]^2$ with a source term derived from the two-dimensional Black--Scholes operator, including the mixed-derivative correlation term $2A_{12}u_{x_1x_2}$.
+ The observed spatial convergence rate is EOC $\approx 0.00$ for all tested correlation values $\rho\in\{-0.5,0,0.5\}$, consistent with the $\mathcal{O}(h)$ rate expected for the $L^2(0)$ (piecewise-constant) trial space $u_h$ in the ultraweak DPG formulation.
+ We then apply the method to a call-on-minimum basket payoff and compare with a high-accuracy Monte Carlo benchmark ($10^7$ exact terminal samples; Table~\ref{tab:basket-benchmark}). For $N=64$, $N_t=500$, the DPG price falls within the MC 95\%~CI for 0 of 9 tested correlation values.
+}
+
+\newcommand{\textTwoDVerification}{%
+To separate implementation verification from payoff-induced error, we first report a manufactured-solution test for the two-dimensional operator (Table~\ref{tab:manufactured}). The test uses the smooth exact solution $u_{\rm exact}=e^{-\tau}\sin(\pi x_1)\sin(\pi x_2)$ on the unit square $[-1,1]^2$ with a source term derived from the two-dimensional Black--Scholes operator, including the mixed-derivative correlation term $2A_{12}u_{x_1x_2}$.
+ The observed spatial convergence rate is EOC $\approx 1.08$ for all tested correlation values $\rho\in\{-0.5,0,0.5\}$, consistent with the $\mathcal{O}(h)$ rate expected for the $L^2(0)$ (piecewise-constant) trial space $u_h$ in the ultraweak DPG formulation.
+ We then apply the method to a call-on-minimum basket payoff and compare with a high-accuracy Monte Carlo benchmark ($10^7$ exact terminal samples; Table~\ref{tab:basket-benchmark}). For $N=64$, $N_t=500$, the DPG price falls within the MC 95\%~CI for 0 of 9 tested correlation values.
+}

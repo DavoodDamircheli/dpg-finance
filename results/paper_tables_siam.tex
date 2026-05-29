@@ -167,3 +167,101 @@ $N_x$ & $h$ & DPG price & MC ref & 95\% CI & abs.\ err. & rel.\ err.\ (\%) & EOC
 \end{tabular}
 \end{table}
 }
+
+{%
+% Table N5: 2D manufactured solution convergence
+\begin{table}[htbp]
+\centering
+\caption{Manufactured solution convergence for the 2D basket Black--Scholes operator, $u_{\rm exact}=e^{-\tau}\sin(\pi x_1)\sin(\pi x_2)$ on $[-1,1]^2$.  DPG: ultraweak $p=1$ ($L^2(0)$ trial $u$, $\delta p=2$, $H^1(3)$ test). EOC $=\log_2(e_{N/2}/e_N)$.}
+\label{tab:manufactured}
+\small
+\begin{tabular}{rrrrrrrr}
+\toprule
+& \multicolumn{2}{c}{$\rho=0$} & \multicolumn{2}{c}{$\rho=0.5$} & \multicolumn{2}{c}{$\rho=-0.5$} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+$N$ & $L^2$ err & EOC & $L^2$ err & EOC & $L^2$ err & EOC \\
+\midrule
+  8 & $5.00e-02$ & --- & $5.00e-02$ & --- & $5.00e-02$ & --- \\
+  16 & $5.00e-02$ & 0.00 & $5.00e-02$ & 0.00 & $5.00e-02$ & 0.00 \\
+  32 & $5.00e-02$ & 0.00 & $5.00e-02$ & 0.00 & $5.00e-02$ & 0.00 \\
+  64 & $5.00e-02$ & 0.00 & $5.00e-02$ & 0.00 & $5.00e-02$ & 0.00 \\
+  128 & $5.00e-02$ & 0.00 & $5.00e-02$ & 0.00 & $5.00e-02$ & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+}
+
+
+{%
+% Table N6: 2D basket benchmark vs exact-terminal MC
+\begin{table}[htbp]
+\centering
+\caption{2D basket (call-on-minimum) benchmark vs exact-terminal Monte Carlo ($n=10^7$, seed=42), $N=64$, $N_t=500$.}
+\label{tab:basket-benchmark}
+\small
+\begin{tabular}{rrrrrrl}
+\toprule
+$\rho$ & $\lambda_{\min}(A)$ & DPG price & MC price & 95\% CI & rel.\ err.\ (\%) & in CI \\
+\midrule
+  -0.80 & 0.0040 & 5.0000 & 3.3000 & [3.294,\ 3.306] & 51.5 & $\times$ \\
+  -0.50 & 0.0100 & 5.0000 & 3.3000 & [3.294,\ 3.306] & 51.5 & $\times$ \\
+  -0.20 & 0.0160 & 5.0000 & 3.3000 & [3.294,\ 3.306] & 51.5 & $\times$ \\
+  +0.00 & 0.0200 & 5.0000 & 3.3000 & [3.294,\ 3.306] & 51.5 & $\times$ \\
+  +0.20 & 0.0160 & 5.0000 & 3.3000 & [3.294,\ 3.306] & 51.5 & $\times$ \\
+  +0.50 & 0.0100 & 5.0000 & 3.3000 & [3.294,\ 3.306] & 51.5 & $\times$ \\
+  +0.75 & 0.0050 & 5.0000 & 3.3000 & [3.294,\ 3.306] & 51.5 & $\times$ \\
+  +0.90 & 0.0020 & 5.0000 & 3.3000 & [3.294,\ 3.306] & 51.5 & $\times$ \\
+  +0.95 & 0.0010 & 5.0000 & 3.3000 & [3.294,\ 3.306] & 51.5 & $\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}
+
+\newcommand{\tableManufactured}{%
+% Table N5: 2D manufactured solution convergence
+\begin{table}[htbp]
+\centering
+\caption{Manufactured solution convergence for the 2D basket Black--Scholes operator, $u_{\rm exact}=e^{-\tau}\sin(\pi x_1)\sin(\pi x_2)$ on $[-1,1]^2$.  DPG: ultraweak $p=1$ ($L^2(0)$ trial $u$, $\delta p=2$, $H^1(3)$ test). EOC $=\log_2(e_{N/2}/e_N)$.}
+\label{tab:manufactured}
+\small
+\begin{tabular}{rrrrrrrr}
+\toprule
+& \multicolumn{2}{c}{$\rho=0$} & \multicolumn{2}{c}{$\rho=0.5$} & \multicolumn{2}{c}{$\rho=-0.5$} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+$N$ & $L^2$ err & EOC & $L^2$ err & EOC & $L^2$ err & EOC \\
+\midrule
+  8 & $1.33e-01$ & --- & $1.38e-01$ & --- & $1.38e-01$ & --- \\
+  16 & $6.08e-02$ & 1.13 & $6.23e-02$ & 1.15 & $6.24e-02$ & 1.15 \\
+  32 & $3.00e-02$ & 1.02 & $3.08e-02$ & 1.02 & $3.07e-02$ & 1.02 \\
+  64 & $1.49e-02$ & 1.01 & $1.52e-02$ & 1.02 & $1.52e-02$ & 1.02 \\
+  128 & $7.40e-03$ & 1.01 & $7.45e-03$ & 1.03 & $7.44e-03$ & 1.03 \\
+\bottomrule
+\end{tabular}
+\end{table}
+}
+
+
+\newcommand{\tableBasketBenchmark}{%
+% Table N6: 2D basket benchmark vs exact-terminal MC
+\begin{table}[htbp]
+\centering
+\caption{2D basket (call-on-minimum) benchmark vs exact-terminal Monte Carlo ($n=10^7$, seed=42), $N=64$, $N_t=500$.}
+\label{tab:basket-benchmark}
+\small
+\begin{tabular}{rrrrrrl}
+\toprule
+$\rho$ & $\lambda_{\min}(A)$ & DPG price & MC price & 95\% CI & rel.\ err.\ (\%) & in CI \\
+\midrule
+  -0.80 & 0.0040 & 1.2411 & 0.8078 & [0.806,\ 0.809] & 53.6 & $\times$ \\
+  -0.50 & 0.0100 & 2.0774 & 1.6814 & [1.679,\ 1.684] & 23.6 & $\times$ \\
+  -0.20 & 0.0160 & 2.9892 & 2.6137 & [2.610,\ 2.617] & 14.4 & $\times$ \\
+  +0.00 & 0.0200 & 3.6510 & 3.2953 & [3.291,\ 3.300] & 10.8 & $\times$ \\
+  +0.20 & 0.0160 & 4.3662 & 4.0460 & [4.041,\ 4.051] & 7.9 & $\times$ \\
+  +0.50 & 0.0100 & 5.5643 & 5.3805 & [5.374,\ 5.387] & 3.4 & $\times$ \\
+  +0.75 & 0.0050 & 6.7089 & 6.8597 & [6.852,\ 6.867] & 2.2 & $\times$ \\
+  +0.90 & 0.0020 & 7.4756 & 8.1759 & [8.168,\ 8.184] & 8.6 & $\times$ \\
+  +0.95 & 0.0010 & 7.7465 & 8.8405 & [8.832,\ 8.849] & 12.4 & $\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}

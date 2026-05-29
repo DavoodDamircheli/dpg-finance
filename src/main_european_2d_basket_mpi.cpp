@@ -133,6 +133,8 @@ static double bs_call(double S, double K, double r, double sig, double tau) {
 // Global params for MFEM FunctionCoefficient callbacks
 // ---------------------------------------------------------------------------
 static double g_K, g_r, g_sigma1, g_sigma2, g_tau_cb;
+static double g_rho     = 0.0;   // correlation (needed by mfg source)
+static double g_mfg_dt  = 1.0;   // dt for manufactured source term
 
 // Payoff: max(min(S1,S2)-K,0) = K*max(min(exp(x1),exp(x2))-1,0)
 static double payoff_cb(const Vector& xv) {
@@ -148,6 +150,46 @@ static double right_bc_cb(const Vector& xv) {
 // Top BC (x2=x2_max): S2 large → call-on-min ≈ call on S1
 static double top_bc_cb(const Vector& xv) {
     return -(bs_call(g_K * std::exp(xv[0]), g_K, g_r, g_sigma1, g_tau_cb));
+}
+
+// ---------------------------------------------------------------------------
+// Manufactured solution:  u_exact = exp(-tau)*sin(pi*x1)*sin(pi*x2)
+// on domain [-1,1]^2.  u_exact = 0 on all boundaries of [-1,1]^2.
+// ---------------------------------------------------------------------------
+static double mfg_exact_cb(const Vector& xv) {
+    return std::exp(-g_tau_cb)
+           * std::sin(M_PI*xv[0]) * std::sin(M_PI*xv[1]);
+}
+
+// Discrete backward-Euler source f_{n+1} such that u_exact is the exact
+// solution of the fully-discrete system.  Evaluated at tau = tau_{n+1}.
+static double mfg_source_cb(const Vector& xv) {
+    const double pi   = M_PI, pi2 = pi*pi;
+    const double x1 = xv[0], x2 = xv[1];
+    // A coefficients
+    const double A11 = 0.5*g_sigma1*g_sigma1;
+    const double A22 = 0.5*g_sigma2*g_sigma2;
+    const double A12 = 0.5*g_rho*g_sigma1*g_sigma2;
+    const double b1  = g_r - A11;
+    const double b2  = g_r - A22;
+    const double an1 = std::exp(-g_tau_cb);                   // alpha_{n+1}
+    const double an  = std::exp(-(g_tau_cb - g_mfg_dt));      // alpha_n
+    const double s1  = std::sin(pi*x1), s2 = std::sin(pi*x2);
+    const double c1  = std::cos(pi*x1), c2 = std::cos(pi*x2);
+    // f_{n+1} = (an1-an)/dt * s1*s2
+    //         + an1*[ r*s1*s2 + (A11+A22)*pi^2*s1*s2 - 2*A12*pi^2*c1*c2
+    //                - b1*pi*c1*s2 - b2*pi*s1*c2 ]
+    return (an1 - an)/g_mfg_dt * s1*s2
+         + an1*(  g_r*s1*s2
+                + (A11 + A22)*pi2*s1*s2
+                - 2.0*A12*pi2*c1*c2
+                - b1*pi*c1*s2
+                - b2*pi*s1*c2);
+}
+
+// Manufactured IC: u_exact at tau=0
+static double mfg_ic_cb(const Vector& xv) {
+    return std::sin(M_PI*xv[0]) * std::sin(M_PI*xv[1]);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,15 +226,20 @@ int main(int argc, char* argv[])
     int  extra_refine = 0;
     bool verbose      = false;
     bool save_surface = true;
+    bool mfg_mode     = false;   // manufactured-solution verification mode
 
     // CLI overrides (sentinel: NaN / -1 means "use config value")
-    double rho_ov  = std::numeric_limits<double>::quiet_NaN();
-    double K_ov    = std::numeric_limits<double>::quiet_NaN();
-    double S1_0_ov = std::numeric_limits<double>::quiet_NaN();
-    double S2_0_ov = std::numeric_limits<double>::quiet_NaN();
-    int    N_x_ov  = -1;
-    int    N_y_ov  = -1;
-    int    N_t_ov  = -1;
+    double rho_ov    = std::numeric_limits<double>::quiet_NaN();
+    double K_ov      = std::numeric_limits<double>::quiet_NaN();
+    double S1_0_ov   = std::numeric_limits<double>::quiet_NaN();
+    double S2_0_ov   = std::numeric_limits<double>::quiet_NaN();
+    double x1_min_ov = std::numeric_limits<double>::quiet_NaN();
+    double x1_max_ov = std::numeric_limits<double>::quiet_NaN();
+    double x2_min_ov = std::numeric_limits<double>::quiet_NaN();
+    double x2_max_ov = std::numeric_limits<double>::quiet_NaN();
+    int    N_x_ov    = -1;
+    int    N_y_ov    = -1;
+    int    N_t_ov    = -1;
 
     OptionsParser args(argc, argv);
     args.AddOption(&config_file, "-c", "--config", "JSON config file");
@@ -207,9 +254,16 @@ int main(int argc, char* argv[])
     args.AddOption(&K_ov,    "--K",    "--K",    "Override strike K");
     args.AddOption(&S1_0_ov, "--S1_0", "--S1_0", "S1 evaluation point (default: K)");
     args.AddOption(&S2_0_ov, "--S2_0", "--S2_0", "S2 evaluation point (default: K)");
-    args.AddOption(&N_x_ov,  "--N_x",  "--N_x",  "Override N_x");
-    args.AddOption(&N_y_ov,  "--N_y",  "--N_y",  "Override N_y");
-    args.AddOption(&N_t_ov,  "--N_t",  "--N_t",  "Override N_t");
+    args.AddOption(&N_x_ov,    "--N_x",    "--N_x",    "Override N_x");
+    args.AddOption(&N_y_ov,    "--N_y",    "--N_y",    "Override N_y");
+    args.AddOption(&N_t_ov,    "--N_t",    "--N_t",    "Override N_t");
+    args.AddOption(&x1_min_ov, "--x1_min", "--x1_min", "Override domain x1_min");
+    args.AddOption(&x1_max_ov, "--x1_max", "--x1_max", "Override domain x1_max");
+    args.AddOption(&x2_min_ov, "--x2_min", "--x2_min", "Override domain x2_min");
+    args.AddOption(&x2_max_ov, "--x2_max", "--x2_max", "Override domain x2_max");
+    args.AddOption(&mfg_mode, "--mfg",  "--mfg",
+                   "-no-mfg", "--no-mfg",
+                   "Manufactured-solution mode: domain [-1,1]^2, exact source");
     args.Parse();
     if (!args.Good()) {
         if (myid == 0) args.PrintUsage(std::cout);
@@ -230,10 +284,10 @@ int main(int argc, char* argv[])
     double T      = jd(json, "T",      1.0);
     double K      = jd(json, "K",      100.0);
 
-    const double x1_min = jd(j_dom, "x1_min", -3.0);
-    const double x1_max = jd(j_dom, "x1_max",  3.0);
-    const double x2_min = jd(j_dom, "x2_min", -3.0);
-    const double x2_max = jd(j_dom, "x2_max",  3.0);
+    double x1_min = jd(j_dom, "x1_min", -3.0);
+    double x1_max = jd(j_dom, "x1_max",  3.0);
+    double x2_min = jd(j_dom, "x2_min", -3.0);
+    double x2_max = jd(j_dom, "x2_max",  3.0);
 
     int N_x     = ji(j_mesh, "N_x",   16);
     int N_y     = ji(j_mesh, "N_y",   16);
@@ -242,11 +296,21 @@ int main(int argc, char* argv[])
     int delta_p = ji(j_fem,  "delta_p", 1);
 
     // Apply CLI overrides
-    if (!std::isnan(rho_ov)) rho = rho_ov;
-    if (!std::isnan(K_ov))   K   = K_ov;
+    if (!std::isnan(rho_ov))    rho    = rho_ov;
+    if (!std::isnan(K_ov))      K      = K_ov;
+    if (!std::isnan(x1_min_ov)) x1_min = x1_min_ov;
+    if (!std::isnan(x1_max_ov)) x1_max = x1_max_ov;
+    if (!std::isnan(x2_min_ov)) x2_min = x2_min_ov;
+    if (!std::isnan(x2_max_ov)) x2_max = x2_max_ov;
     if (N_x_ov > 0) N_x = N_x_ov;
     if (N_y_ov > 0) N_y = N_y_ov;
     if (N_t_ov > 0) N_t = N_t_ov;
+
+    // Manufactured-solution mode: override domain to [-1,1]^2
+    if (mfg_mode) {
+        x1_min = -1.0; x1_max = 1.0;
+        x2_min = -1.0; x2_max = 1.0;
+    }
 
     // Evaluation point for PRICE_AT_S0
     double S1_0 = std::isnan(S1_0_ov) ? K : S1_0_ov;
@@ -261,9 +325,11 @@ int main(int argc, char* argv[])
     const double b1 = r - 0.5 * sigma1 * sigma1;
     const double b2 = r - 0.5 * sigma2 * sigma2;
     const double dt = T / N_t;
+    g_mfg_dt = dt;
     const double min_eig = MinEigenvalueA(sigma1, sigma2, rho);
 
     g_K = K; g_r = r; g_sigma1 = sigma1; g_sigma2 = sigma2; g_tau_cb = 0.0;
+    g_rho = rho;
 
     const double Lx1 = x1_max - x1_min;
     const double Lx2 = x2_max - x2_min;
@@ -271,6 +337,9 @@ int main(int argc, char* argv[])
     const double hy  = Lx2 / N_y;
 
     if (myid == 0) {
+        std::cout << "PAYOFF_TYPE=call_on_min\n";
+        if (mfg_mode)
+            std::cout << "MFG_MODE=1\n";
         std::cout << "V4: 2D Basket DPG (MPI)\n"
                   << "  sigma1=" << sigma1 << " sigma2=" << sigma2
                   << " rho=" << rho << " r=" << r << " T=" << T << " K=" << K << "\n"
@@ -390,8 +459,13 @@ int main(int argc, char* argv[])
 
     // ---- Initial condition ----
     ParGridFunction u_prev_gf(u_fes);
-    FunctionCoefficient payoff_fc(payoff_cb);
-    u_prev_gf.ProjectCoefficient(payoff_fc);
+    if (mfg_mode) {
+        FunctionCoefficient mfg_ic_fc(mfg_ic_cb);
+        u_prev_gf.ProjectCoefficient(mfg_ic_fc);
+    } else {
+        FunctionCoefficient payoff_fc(payoff_cb);
+        u_prev_gf.ProjectCoefficient(payoff_fc);
+    }
 
     // ---- Solution block vector ----
     Array<int> offsets(5);
@@ -418,6 +492,11 @@ int main(int argc, char* argv[])
     ProductCoefficient      rhs_coeff(dtinv_c, u_prev_coeff);
     a->AddDomainLFIntegrator(new DomainLFIntegrator(rhs_coeff), TestSpace::v_space);
 
+    // Manufactured-solution source term (evaluated at tau_{n+1} via g_tau_cb)
+    FunctionCoefficient mfg_src_fc(mfg_source_cb);
+    if (mfg_mode)
+        a->AddDomainLFIntegrator(new DomainLFIntegrator(mfg_src_fc), TestSpace::v_space);
+
     // ---- Time loop ----
     if (myid == 0)
         std::cout << "Time loop: " << N_t << " steps...\n";
@@ -437,12 +516,18 @@ int main(int argc, char* argv[])
         ParGridFunction hatu_gf;
         hatu_gf.MakeRef(hatu_fes, x.GetBlock(TrialSpace::hatu_space), 0);
         ConstantCoefficient zero_bc(0.0);
-        FunctionCoefficient right_bc_fc(right_bc_cb);
-        FunctionCoefficient top_bc_fc(top_bc_cb);
-        hatu_gf.ProjectBdrCoefficient(zero_bc,    left_bdr);
-        hatu_gf.ProjectBdrCoefficient(zero_bc,    bottom_bdr);
-        hatu_gf.ProjectBdrCoefficient(right_bc_fc, right_bdr);
-        hatu_gf.ProjectBdrCoefficient(top_bc_fc,   top_bdr);
+        hatu_gf.ProjectBdrCoefficient(zero_bc, left_bdr);
+        hatu_gf.ProjectBdrCoefficient(zero_bc, bottom_bdr);
+        if (mfg_mode) {
+            // u_exact=0 on all boundaries of [-1,1]^2, so u_hat=0 everywhere
+            hatu_gf.ProjectBdrCoefficient(zero_bc, right_bdr);
+            hatu_gf.ProjectBdrCoefficient(zero_bc, top_bdr);
+        } else {
+            FunctionCoefficient right_bc_fc(right_bc_cb);
+            FunctionCoefficient top_bc_fc(top_bc_cb);
+            hatu_gf.ProjectBdrCoefficient(right_bc_fc, right_bdr);
+            hatu_gf.ProjectBdrCoefficient(top_bc_fc,   top_bdr);
+        }
 
         Array<int> ess_tdof_list_uhat;
         hatu_fes->GetEssentialTrueDofs(ess_bdr_uhat, ess_tdof_list_uhat);
@@ -490,6 +575,28 @@ int main(int argc, char* argv[])
     }
 
     double t_total = MPI_Wtime() - t_loop_start;
+
+    // ---- Manufactured-solution error (output L2_ERROR, LINF_ERROR) ----
+    if (mfg_mode) {
+        g_tau_cb = T;   // exact solution is evaluated at final time T
+        FunctionCoefficient u_exact_fc(mfg_exact_cb);
+        double l2_err   = u_prev_gf.ComputeL2Error(u_exact_fc);
+        double linf_loc = u_prev_gf.ComputeMaxError(u_exact_fc);
+        double linf_err = 0.0;
+        MPI_Allreduce(&linf_loc, &linf_err, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        if (myid == 0) {
+            std::cout << std::scientific << std::setprecision(10)
+                      << "L2_ERROR="   << l2_err   << "\n"
+                      << "LINF_ERROR=" << linf_err << "\n"
+                      << "NDOF_TOTAL=" << ndof_total << "\n";
+        }
+        // Clean up and return (no need for solution surface output in mfg mode)
+        delete a;
+        delete u_fes; delete sigma_fes; delete hatu_fes; delete hatf_fes;
+        delete u_fec; delete sigma_fec; delete hatu_fec; delete hatf_fec;
+        delete coeff_fes; delete coeff_fec;
+        return 0;
+    }
 
     // ---- Extract solution and delta surfaces (all MPI ranks) ----
     {
