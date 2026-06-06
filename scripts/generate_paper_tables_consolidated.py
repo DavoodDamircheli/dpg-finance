@@ -156,37 +156,59 @@ def table_european_spatial():
 
 
 # ---------------------------------------------------------------------------
-# Table A: European temporal convergence
+# Table A: European temporal convergence  (V2 ultraweak, N_x=256 clean run)
 # ---------------------------------------------------------------------------
 def table_european_temporal():
-    data = read_csv(CONV / "v1_v2_temporal.csv")
-    V1_ATM = 10.45058357
-    V2_ATM = 10.45058357
+    # Use v2_temporal_clean.csv (Phase N1): N_x=256 fixed, σ=0.20
+    # plateau_flag=1 rows are in the spatial-error floor — mark with †
+    clean_path = CONV / "v2_temporal_clean.csv"
+    if clean_path.exists():
+        data = read_csv(clean_path)
+    else:
+        # Fallback: old joint file (V2 at N_x=64, known to be in spatial floor)
+        data = read_csv(CONV / "v1_v2_temporal.csv")
 
     lines = [
         r"\newcommand{\tableEuropeanTemporal}{%",
         r"\begin{table}[htbp]",
         r"  \centering",
-        r"  \caption{European call temporal convergence (backward Euler). "
-        r"V1: $N_x=256$, fixed fine spatial mesh. "
-        r"V2: $N_x=64$; the spatial error floor ($\approx 0.029$ relative at $N_x=64$) "
-        r"dominates and temporal/spatial errors partially cancel at coarse $N_t$, "
-        r"causing apparent increase in total error with $N_t$ refinement.}",
+        r"  \caption{Temporal convergence of the V2 ultraweak DPG European call pricer."
+        r"  Spatial mesh fixed at $N_x=256$, domain $[-3,3]$,"
+        r"  $\sigma=0.20$, $r=0.05$, $T=1$, $K=100$."
+        r"  $\dagger$ = row lies in or beyond the spatial-floor plateau (EOC no longer reflects"
+        r"  pure temporal error). Pre-plateau EOC~$0.85$ confirms first-order backward Euler.}",
         r"  \label{tab:temporal}",
-        r"  \begin{tabular}{rccccc}",
+        r"  \begin{tabular}{rcccc}",
         r"    \hline",
-        r"    $N_t$ & $\Delta t$ & V1 $\|e\|_{L^2}$ & V1 EOC"
-        r" & V2 $\|e\|_{L^2}$ & V2 EOC \\",
+        r"    $N_t$ & $\Delta t$ & $\|e\|_{L^2}$ & EOC$_{L^2}$ & \\",
         r"    \hline",
     ]
-    for r in data:
-        Nt   = int(float(r["N_t"]))
-        dt   = f(r["dt"], 4)
-        v1l2 = sci(float(r["V1_L2_error"]), 2)
-        v2l2 = sci(float(r["V2_L2_error"]), 2)
-        v1oc = eoc(r["V1_EOC_L2"])
-        v2oc = eoc(r["V2_EOC_L2"])
-        lines.append(f"    ${Nt}$ & ${dt}$ & ${v1l2}$ & {v1oc} & ${v2l2}$ & {v2oc} \\\\")
+
+    if clean_path.exists():
+        for r in data:
+            nt_key = "Nt" if "Nt" in r else "N_t"
+            nx_key = "Nx" if "Nx" in r else "N_x"
+            pf_key = "plateau_flag"
+            try:
+                Nt  = int(float(r[nt_key]))
+                dt  = float(r["dt"])
+                l2  = float(r["L2_error"])
+                oc  = r.get("EOC_L2", "")
+                pf  = int(float(r.get(pf_key, 0)))
+            except (ValueError, KeyError):
+                continue
+            dagger = r"$\dagger$" if pf else ""
+            lines.append(
+                f"    ${Nt}$ & ${dt:.4f}$ & ${sci(l2, 3)}$ & {eoc(oc)} & {dagger} \\\\"
+            )
+    else:
+        for r in data:
+            Nt   = int(float(r["N_t"]))
+            dt   = f(r["dt"], 4)
+            v2l2 = sci(float(r["V2_L2_error"]), 2)
+            v2oc = eoc(r["V2_EOC_L2"])
+            lines.append(f"    ${Nt}$ & ${dt}$ & ${v2l2}$ & {v2oc} & \\\\")
+
     lines += [
         r"    \hline",
         r"  \end{tabular}",
@@ -516,6 +538,160 @@ def table_basket_convergence():
 
 
 # ---------------------------------------------------------------------------
+# Table MA-1: Margrabe exchange-option convergence
+# ---------------------------------------------------------------------------
+def table_margrabe_convergence():
+    path = BASE / "results" / "margrabe_convergence_from_black_tower.csv"
+    if not path.exists():
+        return "% \tableMargrabConvergence: margrabe_convergence_from_black_tower.csv not found\n"
+    data = read_csv(path)
+    lines = [
+        r"\newcommand{\tableMargrabConvergence}{%",
+        r"\begin{table}[htbp]",
+        r"  \centering",
+        r"  \caption{Margrabe exchange-option convergence. "
+        r"  $\sigma_1=\sigma_2=0.20$, $\rho=0.5$, $r=0.05$, $T=1$, $S_1^0=S_2^0=100$."
+        r"  Exact ATM price $U\approx 7.966$ (Margrabe formula). "
+        r"  $L^2$ EOC $\approx 0.98$ confirms $O(h)$ for $L^2(0)$ piecewise-constant trial. "
+        r"  Domain $[-4,4]^2$, $N_t=200$.}",
+        r"  \label{tab:margrabe_convergence}",
+        r"  \begin{tabular}{r r r r r r}",
+        r"    \hline",
+        r"    $N_x$ & $h$ & $\|e\|_{L^2}$ & EOC & ATM (DPG) & ATM (exact) \\",
+        r"    \hline",
+    ]
+    for r in data:
+        Nx    = int(float(r["N"]))
+        h_    = f(r["h"], 4)
+        l2    = sci(r["L2_error"], 3)
+        oc    = eoc(r["EOC"])
+        atm   = f(r["ATM_DPG"], 5)
+        exact = f(r["ATM_exact"], 5)
+        lines.append(f"    ${Nx}$ & ${h_}$ & ${l2}$ & {oc} & ${atm}$ & ${exact}$ \\\\")
+    lines += [
+        r"    \hline",
+        r"  \end{tabular}",
+        r"\end{table}",
+        r"}% end \tableMargrabConvergence",
+    ]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Table MA-2: Basket call-on-min at N=128 (rho sweep + convergence)
+# ---------------------------------------------------------------------------
+def table_basket_finer_mesh():
+    path = BASE / "results" / "basket_finer_mesh_from_black_tower.csv"
+    if not path.exists():
+        return "% \\tableBasketFinerMesh: basket_finer_mesh_from_black_tower.csv not found\n"
+    data = read_csv(path)
+
+    sweep = [r for r in data if r.get("study", "") == "rho_sweep"]
+    conv  = [r for r in data if r.get("study", "").startswith("convergence")]
+
+    lines = [
+        r"\newcommand{\tableBasketFinerMesh}{%",
+        r"% Part A: rho sweep at N=128",
+        r"\begin{table}[htbp]",
+        r"  \centering",
+        r"  \caption{Call-on-minimum basket, correlation sweep at $N_x=128$."
+        r"  $\sigma_1=\sigma_2=0.20$, $r=0.05$, $T=1$, $K=100$, $N_t=500$."
+        r"  MC reference: $2\times10^6$ paths, seed=42."
+        r"  DPG error $\leq 2.4\%$ for $\rho\geq 0$ and $9.4\%$ at $\rho=-0.8$"
+        r"  (near-degenerate operator, $\lambda_{\min}(A)=0.004$).}",
+        r"  \label{tab:basket_rho_sweep}",
+        r"  \begin{tabular}{r r r r}",
+        r"    \hline",
+        r"    $\rho$ & DPG ATM & MC ATM & Rel.\ error \\",
+        r"    \hline",
+    ]
+    for r in sweep:
+        rho = f(r["rho"], 1)
+        dpg = f(r["DPG_price"], 5)
+        mc  = f(r["MC_price"],  5)
+        rel = f"{float(r['rel_error'])*100:.2f}\\%"
+        lines.append(f"    ${rho}$ & ${dpg}$ & ${mc}$ & ${rel}$ \\\\")
+    lines += [
+        r"    \hline",
+        r"  \end{tabular}",
+        r"\end{table}",
+        r"",
+        r"% Part B: spatial convergence rho=0",
+        r"\begin{table}[htbp]",
+        r"  \centering",
+        r"  \caption{Call-on-minimum basket spatial convergence at $\rho=0$."
+        r"  MC reference: $3.297\pm 0.005$ ($2\times10^6$ paths). "
+        r"  EOC computed from successive DPG prices.}",
+        r"  \label{tab:basket_convergence_rho0}",
+        r"  \begin{tabular}{r r r r r}",
+        r"    \hline",
+        r"    $N_x$ & DPG ATM & MC ATM & Rel.\ error & EOC \\",
+        r"    \hline",
+    ]
+    prev_err = None
+    for r in conv:
+        Nx  = int(float(r["N"]))
+        dpg = f(r["DPG_price"], 5)
+        mc  = f(r["MC_price"],  5)
+        rel = f"{float(r['rel_error'])*100:.2f}\\%"
+        cur_err = abs(float(r["DPG_price"]) - float(r["MC_price"]))
+        if prev_err is not None:
+            oc_val = math.log2(prev_err / cur_err)
+            oc_str = f"{oc_val:.2f}"
+        else:
+            oc_str = "--"
+        prev_err = cur_err
+        lines.append(f"    ${Nx}$ & ${dpg}$ & ${mc}$ & ${rel}$ & {oc_str} \\\\")
+    lines += [
+        r"    \hline",
+        r"  \end{tabular}",
+        r"\end{table}",
+        r"}% end \tableBasketFinerMesh",
+    ]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Table MPI: V4 MPI strong-scaling (N_x=64, N_t=100, 3 reps)
+# ---------------------------------------------------------------------------
+def table_mpi_timing():
+    path = BASE / "results" / "logs" / "v4_mpi_timing.csv"
+    if not path.exists():
+        return "% \\tableMPIScaling: v4_mpi_timing.csv not found\n"
+    data = read_csv(path)
+    lines = [
+        r"\newcommand{\tableMPIScaling}{%",
+        r"\begin{table}[htbp]",
+        r"  \centering",
+        r"  \caption{MPI strong-scaling for V4 2D basket solver."
+        r"  $N_x=N_y=64$, $N_t=100$, $\rho=0$. "
+        r"  Times are mean over 3 repetitions."
+        r"  Speedup relative to $n_p=1$; "
+        r"  parallel efficiency $= $ speedup$/n_p$.}",
+        r"  \label{tab:mpi_scaling}",
+        r"  \begin{tabular}{r r r r r r}",
+        r"    \hline",
+        r"    $n_p$ & Assembly (s) & Solve (s) & Total (s) & Speedup & Efficiency \\",
+        r"    \hline",
+    ]
+    for r in data:
+        np_   = int(float(r["np"]))
+        asm   = f(r["assembly_time_s"], 2)
+        slv   = f(r["solve_time_s"], 2)
+        tot   = f(r["total_time_s"], 2)
+        spd   = f(r["speedup"], 2)
+        eff   = f"{float(r['efficiency'])*100:.1f}\\%"
+        lines.append(f"    ${np_}$ & ${asm}$ & ${slv}$ & ${tot}$ & ${spd}$ & ${eff}$ \\\\")
+    lines += [
+        r"    \hline",
+        r"  \end{tabular}",
+        r"\end{table}",
+        r"}% end \tableMPIScaling",
+    ]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -533,6 +709,9 @@ def main():
         ("\\tableBasketBenchmark",   table_basket_benchmark),
         ("\\tableCorrelationSweep",  table_correlation_sweep),
         ("\\tableBasketConvergence", table_basket_convergence),
+        ("\\tableMargrabConvergence", table_margrabe_convergence),
+        ("\\tableBasketFinerMesh",   table_basket_finer_mesh),
+        ("\\tableMPIScaling",        table_mpi_timing),
     ]
 
     header = (
@@ -543,7 +722,7 @@ def main():
         f"% Usage in LaTeX:\n"
         f"%   \\input{{results/paper_tables.tex}}\n"
         f"%   \\tableEuropeanSpatial   % Table A spatial\n"
-        f"%   \\tableEuropeanTemporal  % Table A temporal\n"
+        f"%   \\tableEuropeanTemporal  % Table A temporal (V2, N_x=256, clean)\n"
         f"%   \\tableEuropeanGreeks    % Table B\n"
         f"%   \\tableAsianBenchmarkRlow   % Table C\n"
         f"%   \\tableAsianBenchmarkRhigh  % Table D\n"
@@ -552,6 +731,9 @@ def main():
         f"%   \\tableBasketBenchmark   % Table G\n"
         f"%   \\tableCorrelationSweep  % Table H\n"
         f"%   \\tableBasketConvergence % Table I\n"
+        f"%   \\tableMargrabConvergence % Table MA-1: Margrabe exchange-option\n"
+        f"%   \\tableBasketFinerMesh   % Table MA-2: basket N=128 rho-sweep + convergence\n"
+        f"%   \\tableMPIScaling        % MPI strong-scaling\n"
         f"%\n"
     )
 

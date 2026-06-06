@@ -1,0 +1,37 @@
+{
+    "_comment": "Margrabe exchange-option benchmark — Phase MA-1",
+    "option_type": "margrabe_exchange",
+    "sigma1": 0.2,
+    "sigma2": 0.2,
+    "rho": 0.5,
+    "r": 0.05,
+    "T": 1.0,
+    "K": 100.0,
+    "_comment_domain": "x_i = log(S_i/100); domain [-4,4]^2 set by --margrabe flag",
+    "domain": {
+        "x1_min": -4.0,
+        "x1_max":  4.0,
+        "x2_min": -4.0,
+        "x2_max":  4.0
+    },
+    "mesh": {
+        "N_x": 64,
+        "N_y": 64
+    },
+    "time": {
+        "N_t": 200,
+        "scheme": "backward_euler"
+    },
+    "fem": {
+        "p": 1,
+        "delta_p": 2,
+        "_comment": "L2(0) trial u (piecewise constants), enrichment Delta_p=2"
+    },
+    "solver": {
+        "type": "pcg",
+        "preconditioner": "boomeramg",
+        "max_iter": 2000,
+        "rtol": 1e-10,
+        "atol": 1e-12
+    }
+}

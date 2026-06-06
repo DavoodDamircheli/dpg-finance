@@ -53,6 +53,12 @@ message(STATUS "Hypre library : ${HYPRE_LIB}")
 message(STATUS "Hypre includes: ${HYPRE_INCLUDE_DIR}")
 
 # ---------------------------------------------------------------------------
+# LAPACK / BLAS — required by libmfem.a
+# ---------------------------------------------------------------------------
+find_package(LAPACK REQUIRED)
+find_package(BLAS REQUIRED)
+
+# ---------------------------------------------------------------------------
 # SuiteSparse (UMFPack, KLU, AMD …) — MFEM links against these
 # ---------------------------------------------------------------------------
 find_path(SUITESPARSE_INCLUDE_DIR
@@ -69,10 +75,14 @@ find_library(CCOLAMD_LIB  NAMES ccolamd HINTS /usr/lib/x86_64-linux-gnu)
 find_library(SS_CONFIG_LIB NAMES suitesparseconfig HINTS /usr/lib/x86_64-linux-gnu)
 find_library(OPENBLAS_LIB  NAMES openblas  HINTS /usr/lib/x86_64-linux-gnu)
 
-set(SUITESPARSE_LIBS
-    ${UMFPACK_LIB} ${KLU_LIB} ${AMD_LIB} ${CHOLMOD_LIB}
-    ${COLAMD_LIB} ${CAMD_LIB} ${CCOLAMD_LIB}
-    ${SS_CONFIG_LIB} ${OPENBLAS_LIB})
+foreach(_ss_lib
+        ${UMFPACK_LIB} ${KLU_LIB} ${AMD_LIB} ${CHOLMOD_LIB}
+        ${COLAMD_LIB} ${CAMD_LIB} ${CCOLAMD_LIB}
+        ${SS_CONFIG_LIB} ${OPENBLAS_LIB})
+    if(_ss_lib AND NOT _ss_lib MATCHES "-NOTFOUND$")
+        list(APPEND SUITESPARSE_LIBS ${_ss_lib})
+    endif()
+endforeach()
 
 # ---------------------------------------------------------------------------
 # METIS
@@ -102,6 +112,8 @@ target_link_libraries(dpg_common INTERFACE
     ${SUITESPARSE_LIBS}
     ${METIS_LIB}
     MPI::MPI_CXX
+    ${LAPACK_LIBRARIES}
+    ${BLAS_LIBRARIES}
 )
 target_compile_options(dpg_common INTERFACE -O2 -Wall -Wextra)
 

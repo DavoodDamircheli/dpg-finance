@@ -129,6 +129,19 @@ static double bs_call(double S, double K, double r, double sig, double tau) {
     return S * ncdf(d1) - K * std::exp(-r * tau) * ncdf(d2);
 }
 
+// Margrabe exchange-option exact solution: payoff = (S1-S2)+
+// Reference scale S_ref=100; x_i = log(S_i/S_ref)
+static double margrabe_exact(double x1, double x2, double tau,
+                             double sigma1, double sigma2, double rho) {
+    const double S1 = 100.0 * std::exp(x1);
+    const double S2 = 100.0 * std::exp(x2);
+    const double sig_eff = std::sqrt(sigma1*sigma1 - 2.0*rho*sigma1*sigma2 + sigma2*sigma2);
+    if (tau < 1e-14) return std::max(S1 - S2, 0.0);
+    const double d1 = (std::log(S1/S2) + 0.5*sig_eff*sig_eff*tau) / (sig_eff*std::sqrt(tau));
+    const double d2 = d1 - sig_eff * std::sqrt(tau);
+    return S1 * ncdf(d1) - S2 * ncdf(d2);
+}
+
 // ---------------------------------------------------------------------------
 // Global params for MFEM FunctionCoefficient callbacks
 // ---------------------------------------------------------------------------
@@ -192,6 +205,17 @@ static double mfg_ic_cb(const Vector& xv) {
     return std::sin(M_PI*xv[0]) * std::sin(M_PI*xv[1]);
 }
 
+// Margrabe callbacks
+static double margrabe_exact_cb(const Vector& xv) {
+    return margrabe_exact(xv[0], xv[1], g_tau_cb, g_sigma1, g_sigma2, g_rho);
+}
+static double margrabe_payoff_cb(const Vector& xv) {
+    return margrabe_exact(xv[0], xv[1], 0.0, g_sigma1, g_sigma2, g_rho);
+}
+static double margrabe_bc_cb(const Vector& xv) {
+    return -margrabe_exact(xv[0], xv[1], g_tau_cb, g_sigma1, g_sigma2, g_rho);
+}
+
 // ---------------------------------------------------------------------------
 // Element-wise test norm coefficients (adjoint graph norm, element-local)
 // ---------------------------------------------------------------------------
@@ -226,7 +250,8 @@ int main(int argc, char* argv[])
     int  extra_refine = 0;
     bool verbose      = false;
     bool save_surface = true;
-    bool mfg_mode     = false;   // manufactured-solution verification mode
+    bool mfg_mode      = false;   // manufactured-solution verification mode
+    bool margrabe_mode = false;   // Margrabe exchange-option exact-solution mode
 
     // CLI overrides (sentinel: NaN / -1 means "use config value")
     double rho_ov    = std::numeric_limits<double>::quiet_NaN();
@@ -264,6 +289,9 @@ int main(int argc, char* argv[])
     args.AddOption(&mfg_mode, "--mfg",  "--mfg",
                    "-no-mfg", "--no-mfg",
                    "Manufactured-solution mode: domain [-1,1]^2, exact source");
+    args.AddOption(&margrabe_mode, "--margrabe", "--margrabe",
+                   "-no-margrabe", "--no-margrabe",
+                   "Margrabe exchange-option mode: exact BCs/IC, L2 error output");
     args.Parse();
     if (!args.Good()) {
         if (myid == 0) args.PrintUsage(std::cout);
@@ -311,6 +339,11 @@ int main(int argc, char* argv[])
         x1_min = -1.0; x1_max = 1.0;
         x2_min = -1.0; x2_max = 1.0;
     }
+    // Margrabe mode: default domain [-4,4]^2 (use S_ref=100 reference scale)
+    if (margrabe_mode && std::isnan(x1_min_ov)) {
+        x1_min = -4.0; x1_max = 4.0;
+        x2_min = -4.0; x2_max = 4.0;
+    }
 
     // Evaluation point for PRICE_AT_S0
     double S1_0 = std::isnan(S1_0_ov) ? K : S1_0_ov;
@@ -337,7 +370,10 @@ int main(int argc, char* argv[])
     const double hy  = Lx2 / N_y;
 
     if (myid == 0) {
-        std::cout << "PAYOFF_TYPE=call_on_min\n";
+        if (margrabe_mode)
+            std::cout << "PAYOFF_TYPE=margrabe\nMARGRABE_MODE=1\n";
+        else
+            std::cout << "PAYOFF_TYPE=call_on_min\n";
         if (mfg_mode)
             std::cout << "MFG_MODE=1\n";
         std::cout << "V4: 2D Basket DPG (MPI)\n"
@@ -462,6 +498,9 @@ int main(int argc, char* argv[])
     if (mfg_mode) {
         FunctionCoefficient mfg_ic_fc(mfg_ic_cb);
         u_prev_gf.ProjectCoefficient(mfg_ic_fc);
+    } else if (margrabe_mode) {
+        FunctionCoefficient mrg_ic_fc(margrabe_payoff_cb);
+        u_prev_gf.ProjectCoefficient(mrg_ic_fc);
     } else {
         FunctionCoefficient payoff_fc(payoff_cb);
         u_prev_gf.ProjectCoefficient(payoff_fc);
@@ -522,6 +561,13 @@ int main(int argc, char* argv[])
             // u_exact=0 on all boundaries of [-1,1]^2, so u_hat=0 everywhere
             hatu_gf.ProjectBdrCoefficient(zero_bc, right_bdr);
             hatu_gf.ProjectBdrCoefficient(zero_bc, top_bdr);
+        } else if (margrabe_mode) {
+            // Margrabe: use exact formula on all 4 faces (negative trace convention)
+            FunctionCoefficient mrg_bc_fc(margrabe_bc_cb);
+            hatu_gf.ProjectBdrCoefficient(mrg_bc_fc, left_bdr);
+            hatu_gf.ProjectBdrCoefficient(mrg_bc_fc, bottom_bdr);
+            hatu_gf.ProjectBdrCoefficient(mrg_bc_fc, right_bdr);
+            hatu_gf.ProjectBdrCoefficient(mrg_bc_fc, top_bdr);
         } else {
             FunctionCoefficient right_bc_fc(right_bc_cb);
             FunctionCoefficient top_bc_fc(top_bc_cb);
@@ -596,6 +642,23 @@ int main(int argc, char* argv[])
         delete u_fec; delete sigma_fec; delete hatu_fec; delete hatf_fec;
         delete coeff_fes; delete coeff_fec;
         return 0;
+    }
+
+    // ---- Margrabe exact-solution error (compute L2_ERROR, then fall through) ----
+    if (margrabe_mode) {
+        g_tau_cb = T;
+        FunctionCoefficient u_exact_fc(margrabe_exact_cb);
+        double l2_err   = u_prev_gf.ComputeL2Error(u_exact_fc);
+        double linf_loc = u_prev_gf.ComputeMaxError(u_exact_fc);
+        double linf_err = 0.0;
+        MPI_Allreduce(&linf_loc, &linf_err, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        if (myid == 0) {
+            std::cout << std::scientific << std::setprecision(10)
+                      << "L2_ERROR="   << l2_err   << "\n"
+                      << "LINF_ERROR=" << linf_err << "\n"
+                      << "NDOF_TOTAL=" << ndof_total << "\n";
+        }
+        // fall through to surface extraction for PRICE_ATM output
     }
 
     // ---- Extract solution and delta surfaces (all MPI ranks) ----

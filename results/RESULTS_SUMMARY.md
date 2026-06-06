@@ -108,9 +108,12 @@ remaining error 0.0841 is purely spatial (not domain-boundary induced).
 - [x] Positive definiteness of diffusion tensor A verified (lambda_min > 0 for |rho| < 1)
 - [x] Convection sign b = r - sigma²/2 (ALWAYS MINUS) confirmed by test_convection_sign
 - [x] V1 stable for Pe ≤ 1 (sigma ≥ 0.05); Pe > 1 instability correctly documented
-- [ ] V2 temporal O(Δt) convergence with fine spatial mesh N_x=256 (not yet run)
-- [~] v4_mpi_timing.csv (Table I MPI scaling, optional — not run)
-- [~] figE2–E5 use Phase E naming convention (figE2_basket_delta1 etc.), not figE2_basket_payoff
+- [x] V2 temporal O(Δt) convergence with fine spatial mesh N_x=256 (Phase N1: v2_temporal_clean.csv; pre-plateau EOC=0.85)
+- [x] \tableEuropeanTemporal updated to use v2_temporal_clean.csv (N_x=256) — clean EOC shown
+- [x] \tableMargrabConvergence added (Phase MA-1: Margrabe exchange-option, EOC≈0.98 at N=128)
+- [x] \tableBasketFinerMesh added (Phase MA-2: basket N=128, rho sweep + convergence)
+- [x] v4_mpi_timing.csv: MPI strong-scaling complete (np=1,2,4,8; speedup 1.85x/3.29x/5.18x; efficiency 92.6%/82.3%/64.8%); \tableMPIScaling added to paper_tables.tex; figE5 regenerated
+- [x] figE2–E5 use Phase E naming convention (figE2_basket_delta1 etc.) ✓
 
 ---
 
