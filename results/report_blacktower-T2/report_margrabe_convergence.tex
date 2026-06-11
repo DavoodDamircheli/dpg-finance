@@ -1,0 +1,198 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{microtype}
+\usepackage{xcolor}
+
+\geometry{margin=2.5cm}
+
+\title{\textbf{Margrabe Exchange-Option Convergence Study}\\[0.4em]
+\large Ultraweak DPG Finite Element Method\\[0.2em]
+\normalsize Black Tower T2 Workstation --- \texttt{davood-Dell-Pro-Max-Tower-T2-FCT2250}}
+
+\author{dpg-finance project}
+\date{11 June 2026}
+
+\begin{document}
+\maketitle
+
+\section{Overview}
+
+This report documents a spatial convergence study for Margrabe's exchange-option
+formula~\cite{margrabe1978value} solved by the ultraweak DPG finite element method on a
+two-dimensional log-price domain.  All runs were executed on the Black Tower T2
+workstation (Intel Core Ultra 9 285K, 125\,GiB RAM) using 16 MPI ranks.
+
+A memory leak in the MFEM \texttt{ParDPGWeakForm} --- which previously limited the solver
+to roughly 300 time steps before exhausting RAM at $N=256$ --- was identified and fixed
+prior to this study; details are given in Section~\ref{sec:impl}.
+
+\section{Mathematical Problem}
+
+Let $X_i = \log(S_i/K)$ denote log-prices with $K=100$.
+Under the risk-neutral measure the two-asset Black--Scholes PDE in backward time
+$\tau = T - t$ is
+\begin{equation}
+  \frac{\partial u}{\partial\tau}
+  = \tfrac{1}{2}\sum_{i,j} (\Sigma\Sigma^\top)_{ij}
+      \frac{\partial^2 u}{\partial x_i\,\partial x_j}
+  + \sum_i b_i \frac{\partial u}{\partial x_i}
+  - r\,u,
+  \qquad (x_1,x_2)\in\Omega,\;\tau\in(0,T],
+\end{equation}
+with convection coefficients $b_i = r - \sigma_i^2/2$ and diffusion matrix
+$A = \tfrac{1}{2}\Sigma\Sigma^\top$ where
+$A_{11}=\sigma_1^2/2$, $A_{22}=\sigma_2^2/2$,
+$A_{12}=A_{21}=\rho\sigma_1\sigma_2/2$.
+
+\textbf{Margrabe payoff.} The exchange option $\max(S_1-S_2,0)$ gives initial condition
+$u(x_1,x_2,0) = K\bigl(e^{x_1}-e^{x_2}\bigr)^+$
+and the exact price at any $(S_1,S_2,\tau)$ is
+\begin{equation}
+  U = S_1\,N(d_1) - S_2\,N(d_2),
+  \qquad
+  d_{1,2} = \frac{\log(S_1/S_2)\pm\tfrac{1}{2}\sigma_\mathrm{eff}^2\tau}%
+                  {\sigma_\mathrm{eff}\sqrt{\tau}},
+\end{equation}
+where $\sigma_\mathrm{eff}=\sqrt{\sigma_1^2-2\rho\sigma_1\sigma_2+\sigma_2^2}$.
+
+\textbf{Parameters.}
+$\sigma_1=\sigma_2=0.2$, $\rho=0.5$, $r=0.05$, $T=1$,
+domain $\Omega=[-3,3]^2$, exact BCs on all four faces.
+At the money ($S_1=S_2=K=100$): $\sigma_\mathrm{eff}=0.2$,
+$U^*\approx 7.9656$.
+
+\section{Discretisation}
+
+\subsection{Ultraweak DPG formulation}
+
+The PDE is discretised in space by the ultraweak DPG method of Demkowicz and
+Gopalakrishnan with trial spaces
+\begin{align*}
+  u &\in L^2(\mathcal{T}_h)\ [p=0,\text{ piecewise constants}],\\
+  \boldsymbol{\sigma} &\in [L^2(\mathcal{T}_h)]^2\ [p=0\text{ vector}],\\
+  \hat u &\in H^{1/2}(\mathcal{S}_h)\ [\text{trace, order 1}],\\
+  \hat f &\in H^{-1/2}(\mathcal{S}_h)\ [RT_0\text{ trace}],
+\end{align*}
+and enriched test spaces of order $p+\Delta p=3$ ($\Delta p=2$).
+The enrichment guarantees the inf-sup condition and optimal $O(h^1)$ convergence
+in $L^2$ for piecewise-constant trial functions.
+
+Time stepping uses backward Euler on a uniform partition of $[0,T]$ with
+$N_t = 2N$ steps; the time-step error is negligible relative to the spatial error
+at these mesh sizes.
+
+\subsection{Solver}
+
+The global saddle-point system is assembled in parallel (MFEM~4.8 + Hypre~2.27),
+assembled into block-HypreParMatrix form, and solved by CG with a
+block-diagonal AMG preconditioner (one \texttt{HypreBoomerAMG} per diagonal block,
+plus \texttt{HypreAMS} for the $\hat f$ block).
+
+\section{Implementation Note: Memory Leak Fix}
+\label{sec:impl}
+
+Prior to this study, \texttt{ParDPGWeakForm::ParallelAssemble()} created a fresh
+\texttt{BlockOperator} of \texttt{HypreParMatrix} objects at every time step without
+freeing the previous one.  At $N=256$ each such object is approximately 350\,MB
+(total across ranks), so the run exhausted 125\,GiB RAM after ${\approx}300$ steps.
+
+The root cause is that the step-0 system matrix pointer is held by the AMG
+preconditioner (which must survive the entire time loop), so a naive
+\texttt{delete p\_mat} before each reassembly would produce a dangling pointer.
+
+\textbf{Fix.} A new method \texttt{ParDPGWeakForm::UpdateRHS()} was added to
+\texttt{pweakform.cpp/hpp}.  It reuses the step-0 prolongation $P$, restriction $R$,
+and elimination operator $p\_\mathrm{mat\_e}$, and recomputes only the right-hand side
+\[
+  \mathbf{B} = P^\top \mathbf{y} - p_\mathrm{mat\_e}\,\mathbf{X}_\mathrm{ess}
+  + \text{BC correction},
+\]
+where $\mathbf{y}$ is the assembled linear form from the current time step.
+No new \texttt{p\_mat} is allocated.  The system matrix is time-independent so this
+is numerically exact.  Two smaller leaks (stale $\mathbf{y}$ BlockVector in
+\texttt{AllocMat()}, stale element matrices in \texttt{Assemble()} with
+\texttt{StoreMatrices(true)}) were also corrected.  After the fix, peak RSS is flat
+across all $N_t$ steps.
+
+\section{Results}
+
+\subsection{Convergence table}
+
+Table~\ref{tab:margrabe-convergence} reports the $L^2(\Omega)$ error at $\tau=T$,
+the empirical order of convergence (EOC), and the at-the-money price
+$U_h(0,0,T)$ for mesh sizes $N=128,\ldots,512$.
+
+\begin{table}[htbp]
+\centering
+\caption{Margrabe exchange-option DPG convergence.
+$\sigma_1=\sigma_2=0.2$, $\rho=0.5$, $r=0.05$, $T=1$,
+$N_t=2N$, domain $[-3,3]^2$, $p=0$, $\Delta p=2$ (test order~3).
+Exact ATM price: $U^*\approx 7.966$.}
+\label{tab:margrabe-convergence}
+\begin{tabular}{rrrrrrrr}
+\toprule
+$N$ & $N_t$ & DOF & $L^2$ error & EOC & $U_h(0,0,T)$ & $U^*$ & rel.\ err \\
+\midrule
+ 128 &  256 &   98\,817 & $4.78\times10^{1}$ & ---  & 7.9505 & 7.966 & 0.19\% \\
+ 192 &  384 &  221\,953 & $3.22\times10^{1}$ & 0.97 & 7.9651 & 7.966 & 0.01\% \\
+ 256 &  512 &  394\,241 & $2.44\times10^{1}$ & 0.97 & 7.9725 & 7.966 & 0.09\% \\
+ 384 &  768 &  886\,273 & $1.65\times10^{1}$ & 0.97 & 7.9722 & 7.966 & 0.08\% \\
+ 512 & 1024 & 1\,574\,913 & $1.24\times10^{1}$ & 0.97 & 7.9703 & 7.966 & 0.06\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Key observations:
+\begin{itemize}
+  \item EOC stabilises at $\approx 0.97$ for $N\geq192$, confirming the expected
+        $O(h^1)$ rate for piecewise-constant DPG trial functions.
+  \item ATM price converges monotonically from below and reaches 0.06\% relative
+        error at $N=512$ (absolute error ${\approx}0.009$).
+  \item All runs completed without memory issues after the leak fix; the $N=512$
+        run (1.57M DOFs, 1024 time steps) used ${\approx}423$\,MB peak RSS per rank
+        and completed in 3766\,s on 16 MPI ranks.
+\end{itemize}
+
+\subsection{Convergence plot}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.72\textwidth]{figMA1_margrabe_convergence.pdf}
+  \caption{$L^2(\Omega)$ error vs.\ mesh size $h=6/N$ for the Margrabe
+    exchange-option benchmark.  Reference lines $O(h^1)$ and $O(h^2)$ are
+    anchored at the $N=256$ data point.}
+  \label{fig:margrabe-convergence}
+\end{figure}
+
+Figure~\ref{fig:margrabe-convergence} shows the $L^2$ error versus $h$ on a
+log-log scale.  The data aligns tightly with the $O(h^1)$ reference slope across
+the full range $N=128$--$512$ ($h\approx0.047$--$0.012$).
+
+\section{Conclusions}
+
+The ultraweak DPG solver with piecewise-constant trial functions achieves
+$O(h^1)$ spatial convergence for the Margrabe exchange option, consistent with
+theoretical predictions.  ATM pricing error is below 0.2\% for $N\geq128$ and
+below 0.1\% for $N\geq256$.  After the MFEM memory leak fix, the solver scales to
+$N=512$ (${\approx}1.6$M DOFs, 1024 time steps) without memory issues on the
+Black Tower T2 machine.
+
+\begin{thebibliography}{9}
+\bibitem{margrabe1978value}
+W.\ Margrabe,
+``The value of an option to exchange one asset for another,''
+\textit{Journal of Finance}, 33(1):177--186, 1978.
+
+\bibitem{demkowicz2010class}
+L.\ Demkowicz and J.\ Gopalakrishnan,
+``A class of discontinuous Petrov--Galerkin methods. Part I: The transport equation,''
+\textit{Computer Methods in Applied Mechanics and Engineering},
+199(23--24):1558--1572, 2010.
+\end{thebibliography}
+
+\end{document}

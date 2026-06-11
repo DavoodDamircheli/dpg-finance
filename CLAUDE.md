@@ -48,6 +48,28 @@ Container provides: MFEM 4.8, Hypre 2.27.0, MPICH, METIS (libmetis-dev).
 
 CMake was fixed to link LAPACK/BLAS explicitly and filter NOTFOUND suitesparse libs.
 
+**MFEM memory leak fix (2026-06-10):** Three leaks patched in the container MFEM source:
+1. `weakform.cpp` `Assemble()`: `delete Bmat[iel]; delete fvec[iel];` before `= new` (prevented by `StoreMatrices(false)` — now set to false in solver)
+2. `pweakform.cpp` `AllocMat()` (base class): `delete y;` before `y = new BlockVector(...)` to free old RHS
+3. `main_european_2d_basket_mpi.cpp` time loop: replaced `FormLinearSystem` with `a->UpdateRHS(...)` — avoids creating a new `p_mat` BlockOperator each step (dominant ~350 MB/step leak at N=256)
+
+`UpdateRHS` is a new method in `ParDPGWeakForm` (pweakform.cpp/hpp) that recomputes B = P^T*y − p_mat_e*X using the step-0 `p_mat_e` and `P` without calling `ParallelAssemble`. The system matrix is time-independent, so this is numerically equivalent. After the fix, memory is flat across all 600+ time steps at N=256.
+
+Recompile after any change to container MFEM sources:
+```bash
+singularity exec --bind ~/projects/dpg-finance:/workspace \
+  ~/projects/containers/mfem/mfem-dpg-oct-6-2025 \
+  bash -c "/usr/bin/mpicxx -O3 -DNDEBUG -std=c++11 \
+    -I/opt/mfem/artifacts -I/opt/mfem/include -I/opt/hypre/include \
+    -c /opt/mfem/miniapps/dpg/util/weakform.cpp -o /tmp/weakform_fixed.o && \
+  /usr/bin/mpicxx -O3 -DNDEBUG -std=c++11 \
+    -I/opt/mfem/artifacts -I/opt/mfem/include -I/opt/hypre/include \
+    -c /opt/mfem/miniapps/dpg/util/pweakform.cpp -o /tmp/pweakform_fixed.o"
+cp /tmp/weakform_fixed.o  [artifacts_dir]/weakform.cpp.o
+cp /tmp/pweakform_fixed.o [artifacts_dir]/pweakform.cpp.o
+# Then rebuild from inside container: cd /workspace/build && make -j$(nproc)
+```
+
 ---
 
 ## FEM Parameters (2D experiments)
@@ -161,6 +183,86 @@ U = S1*N(d1) - S2*N(d2)
 ```
 
 For s1=s2=0.2, rho=0.5: sig_eff=0.2. At S1=S2=100, tau=1: U≈7.966.
+
+---
+
+## Phase MA-FM — Multi-Asset Fine-Mesh Experiments (scripts written 2026-06-06)
+
+**Status: SCRIPTS WRITTEN, RUNS PENDING** — all solver runs must execute inside the
+Singularity container. No numerical results exist yet for this phase.
+
+### Parameter choices (all blocks)
+- domain = [-6,6]^2 (wider than Phase MA; matches 1D truncation)
+- theta = 1.0 (backward Euler), p=1/delta_p=2 in code (L2(0) trial, test_order=3)
+- Domain passed via CLI: `--x1_min -6 --x1_max 6 --x2_min -6 --x2_max 6`
+
+### MA-FM-1: Margrabe convergence (Block MA-1)
+- Mesh: N = 128, 192, 256, 384, 512 × Nt=300
+- Config: `config/european_2d_margrabe.json` + CLI domain flags
+- Scripts:
+    `scripts/run_margrabe_convergence.py`    → CSV + LaTeX table
+    `scripts/plot_margrabe_convergence.py`   → figMA1
+- Outputs (pending):
+    `results/margrabe_convergence.csv`
+    `results/paper_tables_margrabe.tex`  (\tableMargrabConvergence)
+    `results/figures/figMA1_margrabe_convergence.pdf`
+- ATM exact: 7.966  |  ATM DPG at N=512: <pending>
+- EOC at N=256→384: <pending>  (target ≥ 0.85)
+
+### MA-FM-2: Basket finer mesh (Block MA-2)
+- Step 1: N=256 correlation sweep, rho in {-0.8,-0.5,0,0.3,0.5,0.8}, Nt=500
+- Step 2: rho=0 convergence, N = 128, 192, 256, 384, Nt=500
+- Scripts:
+    `scripts/run_basket_N256.py`                    → CSV + patches paper_tables_siam.tex
+    `scripts/plot_basket_correlation_comparison.py` → figE3 update
+- Outputs (pending):
+    `results/basket_N256_correlation.csv`
+    `results/basket_rho0_convergence.csv`
+    `results/paper_tables_siam.tex` (N=256 rows appended to \tableBasketBenchmark)
+    `results/figures/figE3_correlation_sweep.pdf` (N=64 + N=256 curves)
+- rel_error at N=256, rho=0: <pending>  (target < 7%)
+
+### MA-FM-3: Delta surfaces (Block MA-3)
+- Mesh: N=256, rho=0, basket payoff, Nt=500, domain [-6,6]^2
+- Scripts:
+    `scripts/run_basket_delta_N256.py`   → surface CSV + 50×50 subgrid
+    `scripts/plot_delta_surfaces_N256.py` → figMA2/MA3/MA4
+- Outputs (pending):
+    `results/solutions/v4_basket_surface_N256_rho0.0.csv`
+    `results/delta_surfaces_N256.csv`  (50×50 subgrid)
+    `results/figures/figMA2_delta1_surface.pdf`
+    `results/figures/figMA3_delta2_surface.pdf`
+    `results/figures/figMA4_delta1_contour.pdf`
+- Delta_1 range: <pending>  (expected [0,1])
+
+### MA-FM-5: Contingency (Block MA-5)
+- Trigger: if MA-FM-2 rel_error at N=256 still > 7%, or non-monotone convergence
+- Sub-A: temporal refinement at N=256 (Nt=200,500,1000,2000)
+- Sub-B: near-degenerate rho in {0.90,0.95,0.99}
+- Scripts: not yet written
+
+### Run order inside container
+```bash
+# MA-FM-1: Margrabe convergence (~hours for N=512)
+python3 scripts/run_margrabe_convergence.py --np 8
+python3 scripts/plot_margrabe_convergence.py
+
+# MA-FM-2: Basket N=256 sweep + rho=0 convergence
+python3 scripts/run_basket_N256.py --np 8
+python3 scripts/plot_basket_correlation_comparison.py
+
+# MA-FM-3: Delta surfaces (after MA-FM-2 completes at rho=0)
+python3 scripts/run_basket_delta_N256.py --np 8
+python3 scripts/plot_delta_surfaces_N256.py
+```
+
+### Open items for LaTeX phase
+- Insert \tableMargrabConvergence into main.tex (new subsection before basket)
+- Update \tableBasketBenchmark to show N=256 rows (automated by run_basket_N256.py)
+- Add figMA1–figMA4 figure environments to main.tex
+- Add proof for thm:apriori_uw_d
+- Remove red draft note from Introduction
+- Add \cite{margrabe1978value} to main.bib
 
 ---
 

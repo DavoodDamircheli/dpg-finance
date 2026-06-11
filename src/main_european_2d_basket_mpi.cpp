@@ -129,14 +129,21 @@ static double bs_call(double S, double K, double r, double sig, double tau) {
     return S * ncdf(d1) - K * std::exp(-r * tau) * ncdf(d2);
 }
 
-// Margrabe exchange-option exact solution: payoff = (S1-S2)+
-// Reference scale S_ref=100; x_i = log(S_i/S_ref)
+// Margrabe payoff: (S1 - S2)+ with S_ref=100; x_i = log(S_i/S_ref)
+static inline double margrabe_payoff(double x1, double x2) {
+    return std::max(100.0 * std::exp(x1) - 100.0 * std::exp(x2), 0.0);
+}
+
+// Margrabe exchange-option exact solution; tau=0 returns the payoff directly.
+// sig_eff = sqrt(s1^2 - 2*rho*s1*s2 + s2^2); for s1=s2=0.2, rho=0.5: sig_eff=0.2
+// U(x1,x2,tau) = 100*exp(x1)*N(d1) - 100*exp(x2)*N(d2)
+// d1 = ((x1-x2) + 0.5*sig_eff^2*tau) / (sig_eff*sqrt(tau)),  d2 = d1 - sig_eff*sqrt(tau)
 static double margrabe_exact(double x1, double x2, double tau,
                              double sigma1, double sigma2, double rho) {
+    if (tau < 1e-14) return margrabe_payoff(x1, x2);
     const double S1 = 100.0 * std::exp(x1);
     const double S2 = 100.0 * std::exp(x2);
     const double sig_eff = std::sqrt(sigma1*sigma1 - 2.0*rho*sigma1*sigma2 + sigma2*sigma2);
-    if (tau < 1e-14) return std::max(S1 - S2, 0.0);
     const double d1 = (std::log(S1/S2) + 0.5*sig_eff*sig_eff*tau) / (sig_eff*std::sqrt(tau));
     const double d2 = d1 - sig_eff * std::sqrt(tau);
     return S1 * ncdf(d1) - S2 * ncdf(d2);
@@ -210,7 +217,7 @@ static double margrabe_exact_cb(const Vector& xv) {
     return margrabe_exact(xv[0], xv[1], g_tau_cb, g_sigma1, g_sigma2, g_rho);
 }
 static double margrabe_payoff_cb(const Vector& xv) {
-    return margrabe_exact(xv[0], xv[1], 0.0, g_sigma1, g_sigma2, g_rho);
+    return margrabe_payoff(xv[0], xv[1]);
 }
 static double margrabe_bc_cb(const Vector& xv) {
     return -margrabe_exact(xv[0], xv[1], g_tau_cb, g_sigma1, g_sigma2, g_rho);
@@ -265,6 +272,8 @@ int main(int argc, char* argv[])
     int    N_x_ov    = -1;
     int    N_y_ov    = -1;
     int    N_t_ov    = -1;
+    int    p_ov      = -1;
+    int    delta_p_ov = -1;
 
     OptionsParser args(argc, argv);
     args.AddOption(&config_file, "-c", "--config", "JSON config file");
@@ -279,9 +288,11 @@ int main(int argc, char* argv[])
     args.AddOption(&K_ov,    "--K",    "--K",    "Override strike K");
     args.AddOption(&S1_0_ov, "--S1_0", "--S1_0", "S1 evaluation point (default: K)");
     args.AddOption(&S2_0_ov, "--S2_0", "--S2_0", "S2 evaluation point (default: K)");
-    args.AddOption(&N_x_ov,    "--N_x",    "--N_x",    "Override N_x");
-    args.AddOption(&N_y_ov,    "--N_y",    "--N_y",    "Override N_y");
-    args.AddOption(&N_t_ov,    "--N_t",    "--N_t",    "Override N_t");
+    args.AddOption(&N_x_ov,      "--N_x",      "--N_x",      "Override N_x");
+    args.AddOption(&N_y_ov,      "--N_y",      "--N_y",      "Override N_y");
+    args.AddOption(&N_t_ov,      "--N_t",      "--N_t",      "Override N_t");
+    args.AddOption(&p_ov,        "--p",        "--p",        "Override FEM trial order p (u_fec=L2(p-1))");
+    args.AddOption(&delta_p_ov,  "--delta_p",  "--delta_p",  "Override enrichment delta_p (test_order=p+delta_p)");
     args.AddOption(&x1_min_ov, "--x1_min", "--x1_min", "Override domain x1_min");
     args.AddOption(&x1_max_ov, "--x1_max", "--x1_max", "Override domain x1_max");
     args.AddOption(&x2_min_ov, "--x2_min", "--x2_min", "Override domain x2_min");
@@ -333,6 +344,8 @@ int main(int argc, char* argv[])
     if (N_x_ov > 0) N_x = N_x_ov;
     if (N_y_ov > 0) N_y = N_y_ov;
     if (N_t_ov > 0) N_t = N_t_ov;
+    if (p_ov      > 0) p       = p_ov;
+    if (delta_p_ov > 0) delta_p = delta_p_ov;
 
     // Manufactured-solution mode: override domain to [-1,1]^2
     if (mfg_mode) {
@@ -455,7 +468,7 @@ int main(int argc, char* argv[])
     test_fec.Append(v_fec);     test_fec.Append(tau_fec);
 
     ParDPGWeakForm* a = new ParDPGWeakForm(trial_fes, test_fec);
-    a->StoreMatrices(true);
+    a->StoreMatrices(false);
 
     // Row1 (test v ∈ H1)
     a->AddTrialIntegrator(new MixedScalarWeakDivergenceIntegrator(betacoeff),
@@ -543,26 +556,41 @@ int main(int argc, char* argv[])
     double t_assemble = 0.0, t_solve = 0.0;
     double t_loop_start = MPI_Wtime();
 
-    for (int step = 0; step < N_t; step++) {
-        const double tau_n1 = (step + 1) * dt;
-        g_tau_cb = tau_n1;
+    // ess_tdof_list is the same every step (boundary attributes don't change).
+    Array<int> ess_tdof_list_uhat;
+    hatu_fes->GetEssentialTrueDofs(ess_bdr_uhat, ess_tdof_list_uhat);
+    {
+        const int n      = ess_tdof_list_uhat.Size();
+        const int offset = u_fes->GetTrueVSize() + sigma_fes->GetTrueVSize();
+        ess_tdof_list_uhat.SetSize(n);  // already the right size; just document
+        // Re-use storage: shift indices to global block offset
+        Array<int> tmp(n);
+        for (int j = 0; j < n; j++) tmp[j] = ess_tdof_list_uhat[j] + offset;
+        ess_tdof_list_uhat = tmp;
+    }
+    const Array<int>& ess_tdof_list = ess_tdof_list_uhat;
 
+    // Build the preconditioner ONCE from step-0 matrix.
+    // The DPG stiffness matrix is time-independent (r, sigma, K constant);
+    // only the RHS changes via rhs_coeff = u_prev/dt.  Rebuilding AMG every
+    // step caused Hypre's internal allocator to grow unboundedly (rc=9 OOM).
+    g_tau_cb = dt;
+    {
         double ta = MPI_Wtime();
         a->Assemble();
         t_assemble += MPI_Wtime() - ta;
-
-        // Apply essential BCs on u_hat
+    }
+    // Apply step-0 BCs into x (sets u_hat trace values for FormLinearSystem).
+    auto apply_bcs = [&]() {
         ParGridFunction hatu_gf;
         hatu_gf.MakeRef(hatu_fes, x.GetBlock(TrialSpace::hatu_space), 0);
         ConstantCoefficient zero_bc(0.0);
         hatu_gf.ProjectBdrCoefficient(zero_bc, left_bdr);
         hatu_gf.ProjectBdrCoefficient(zero_bc, bottom_bdr);
         if (mfg_mode) {
-            // u_exact=0 on all boundaries of [-1,1]^2, so u_hat=0 everywhere
             hatu_gf.ProjectBdrCoefficient(zero_bc, right_bdr);
             hatu_gf.ProjectBdrCoefficient(zero_bc, top_bdr);
         } else if (margrabe_mode) {
-            // Margrabe: use exact formula on all 4 faces (negative trace convention)
             FunctionCoefficient mrg_bc_fc(margrabe_bc_cb);
             hatu_gf.ProjectBdrCoefficient(mrg_bc_fc, left_bdr);
             hatu_gf.ProjectBdrCoefficient(mrg_bc_fc, bottom_bdr);
@@ -574,36 +602,59 @@ int main(int argc, char* argv[])
             hatu_gf.ProjectBdrCoefficient(right_bc_fc, right_bdr);
             hatu_gf.ProjectBdrCoefficient(top_bc_fc,   top_bdr);
         }
+    };
+    apply_bcs();
 
-        Array<int> ess_tdof_list_uhat;
-        hatu_fes->GetEssentialTrueDofs(ess_bdr_uhat, ess_tdof_list_uhat);
-        const int n      = ess_tdof_list_uhat.Size();
-        const int offset = u_fes->GetTrueVSize() + sigma_fes->GetTrueVSize();
-        Array<int> ess_tdof_list(n);
-        for (int j = 0; j < n; j++)
-            ess_tdof_list[j] = ess_tdof_list_uhat[j] + offset;
+    // Ah_prec must outlive the loop: amg0-3 hold internal refs to its blocks.
+    OperatorPtr Ah_prec;
+    Vector X_prec, B_prec;
+    a->FormLinearSystem(ess_tdof_list, x, Ah_prec, X_prec, B_prec);
+    BlockOperator* A_prec = Ah_prec.As<BlockOperator>();
 
-        OperatorPtr Ah;
+    BlockDiagonalPreconditioner M(A_prec->RowOffsets());
+    M.owns_blocks = 1;
+    HypreBoomerAMG* amg0 = new HypreBoomerAMG((HypreParMatrix&)A_prec->GetBlock(0,0));
+    HypreBoomerAMG* amg1 = new HypreBoomerAMG((HypreParMatrix&)A_prec->GetBlock(1,1));
+    HypreBoomerAMG* amg2 = new HypreBoomerAMG((HypreParMatrix&)A_prec->GetBlock(2,2));
+    HypreAMS*       ams3 = new HypreAMS((HypreParMatrix&)A_prec->GetBlock(3,3), hatf_fes);
+    amg0->SetPrintLevel(0); amg1->SetPrintLevel(0);
+    amg2->SetPrintLevel(0); ams3->SetPrintLevel(0);
+    M.SetDiagonalBlock(0, amg0); M.SetDiagonalBlock(1, amg1);
+    M.SetDiagonalBlock(2, amg2); M.SetDiagonalBlock(3, ams3);
+
+    CGSolver cg(MPI_COMM_WORLD);
+    cg.SetRelTol(1e-10); cg.SetAbsTol(1e-14);
+    cg.SetMaxIter(2000); cg.SetPrintLevel(0);
+    cg.SetPreconditioner(M);
+
+    // Solve step 0
+    {
+        double ts = MPI_Wtime();
+        cg.SetOperator(*A_prec);
+        cg.Mult(B_prec, X_prec);
+        t_solve += MPI_Wtime() - ts;
+        a->RecoverFEMSolution(X_prec, x);
+        ParGridFunction u_sol_gf;
+        u_sol_gf.MakeRef(u_fes, x.GetBlock(TrialSpace::u_space), 0);
+        u_prev_gf = u_sol_gf;
+        if (verbose && myid == 0)
+            std::cout << "  step=0 tau=" << dt
+                      << " CG_iters=" << cg.GetNumIterations() << "\n";
+    }
+
+    // Steps 1..N_t-1: reuse M; only rebuild Ah for the updated RHS.
+    for (int step = 1; step < N_t; step++) {
+        const double tau_n1 = (step + 1) * dt;
+        g_tau_cb = tau_n1;
+
+        double ta = MPI_Wtime();
+        a->Assemble();
+        t_assemble += MPI_Wtime() - ta;
+
+        apply_bcs();
+
         Vector X, B;
-        a->FormLinearSystem(ess_tdof_list, x, Ah, X, B);
-
-        BlockOperator* A = Ah.As<BlockOperator>();
-        BlockDiagonalPreconditioner M(A->RowOffsets());
-        M.owns_blocks = 1;
-
-        HypreBoomerAMG* amg0 = new HypreBoomerAMG((HypreParMatrix&)A->GetBlock(0,0));
-        HypreBoomerAMG* amg1 = new HypreBoomerAMG((HypreParMatrix&)A->GetBlock(1,1));
-        HypreBoomerAMG* amg2 = new HypreBoomerAMG((HypreParMatrix&)A->GetBlock(2,2));
-        HypreAMS*       ams3 = new HypreAMS((HypreParMatrix&)A->GetBlock(3,3), hatf_fes);
-        amg0->SetPrintLevel(0); amg1->SetPrintLevel(0);
-        amg2->SetPrintLevel(0); ams3->SetPrintLevel(0);
-        M.SetDiagonalBlock(0, amg0); M.SetDiagonalBlock(1, amg1);
-        M.SetDiagonalBlock(2, amg2); M.SetDiagonalBlock(3, ams3);
-
-        CGSolver cg(MPI_COMM_WORLD);
-        cg.SetRelTol(1e-10); cg.SetAbsTol(1e-14);
-        cg.SetMaxIter(2000); cg.SetPrintLevel(0);
-        cg.SetPreconditioner(M); cg.SetOperator(*A);
+        a->UpdateRHS(ess_tdof_list, x, X, B);
 
         double ts = MPI_Wtime();
         cg.Mult(B, X);
@@ -611,9 +662,11 @@ int main(int argc, char* argv[])
 
         a->RecoverFEMSolution(X, x);
 
-        ParGridFunction u_sol_gf;
-        u_sol_gf.MakeRef(u_fes, x.GetBlock(TrialSpace::u_space), 0);
-        u_prev_gf = u_sol_gf;
+        {
+            ParGridFunction u_sol_gf;
+            u_sol_gf.MakeRef(u_fes, x.GetBlock(TrialSpace::u_space), 0);
+            u_prev_gf = u_sol_gf;
+        }
 
         if (verbose && myid == 0 && (step % 20 == 0))
             std::cout << "  step=" << step << " tau=" << tau_n1
