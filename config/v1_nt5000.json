@@ -1,0 +1,32 @@
+{
+    "_comment": "V1 spatial-convergence config: N_t=5000 (fixes temporal error << spatial), N_x=64 base (doubled by -r flag)",
+    "option_type": "call",
+    "sigma": 0.2,
+    "r": 0.05,
+    "T": 1.0,
+    "K": 100.0,
+    "S0": 100.0,
+    "domain": {
+        "x_min": -3.0,
+        "x_max":  3.0
+    },
+    "mesh": {
+        "N_x": 64,
+        "uniform": true
+    },
+    "time": {
+        "N_t": 5000,
+        "scheme": "backward_euler"
+    },
+    "fem": {
+        "p": 1,
+        "delta_p": 2
+    },
+    "solver": {
+        "type": "pcg",
+        "preconditioner": "jacobi",
+        "max_iter": 1000,
+        "rtol": 1e-10,
+        "atol": 1e-12
+    }
+}

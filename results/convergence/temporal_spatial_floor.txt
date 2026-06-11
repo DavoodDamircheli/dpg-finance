@@ -1,0 +1,5 @@
+# Spatial floor: L2 error from spatial sweep (N_t=5000 fixed)
+# V1: N_x=256, N_t=5000
+# V2: N_x=128, N_t=5000
+primal N_x=256: eps_spatial_L2 = 3.566620e-01
+ultraweak N_x=128: eps_spatial_L2 = 9.525705e-02
