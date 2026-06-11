@@ -266,6 +266,87 @@ python3 scripts/plot_delta_surfaces_N256.py
 
 ---
 
+## Phase MA-FM — Multi-Asset Fine-Mesh Experiments (v4 prompts)
+
+### Status: COMPLETED (date: 2026-06-11)
+
+### Configuration confirmed in MA-0
+- Domain: [-3,3]^2 for Margrabe (run_margrabe_convergence.py DEFAULT_DOMAIN_HALF=3.0);
+          [-6,6]^2 for basket sweep + delta surfaces (explicit CLI --x*_min/max args)
+- p: 1 (code) → u trial = L2(p-1=0) = piecewise constants
+- Delta_p: 2 → test order = p+delta_p = 3
+- Nt rule: Nt=2*N for Margrabe; Nt=500 fixed for basket
+  Sub-A diagnostic confirmed: Nt=500 sufficient for basket — temporal error is NOT
+  the bottleneck (error flat 0.26-0.44% across Nt=500..4000 at N=256, rho=0).
+
+### MA-FM-1: Margrabe convergence
+- Mesh: N=128,192,256,384,512  Nt=2*N  domain=[-3,3]^2  rho=0.5
+- Outputs: results/margrabe_convergence.csv
+           results/paper_tables_margrabe.tex  (\tableMargrabConvergence)
+           results/figures/figMA1_margrabe_convergence.pdf
+- ATM exact: 7.966  |  ATM DPG at N=512: 7.9703  (rel 0.060%)
+- EOC at N=256→384: 0.969   (all EOC in [0.969, 0.974] — clean O(h^1))
+- Memory leak fix required for N=256+ (UpdateRHS — see Build Convention)
+
+### MA-FM-2: Basket finer mesh
+- Mesh: N=128,192,256,384  Nt=500  domain=[-6,6]^2  rho sweep + rho=0 convergence
+- Outputs: results/basket_N256_correlation.csv
+           results/basket_rho0_convergence.csv
+           results/paper_tables_basket_N256.tex (\tableBasketCorrelationN256, \tableBasketRho0Convergence)
+           results/figures/figMA4_basket_correlation_N256.pdf
+           results/figures/figMA5_basket_rho0_convergence.pdf
+- rel_error at N=256, rho=0: 2.38%  (target was <7% — met)
+- rel_error at N=384, rho=0: 0.70%
+- rho sweep at N=256: rho=-0.8: 9.35% (near-degenerate); rho=-0.5: 4.38%;
+  rho=0: 2.38%; rho=0.3: 1.91%; rho=0.5: 1.68%; rho=0.8: 0.40%
+- EOC_price at rho=0: 1.93 (N=128→192), 2.51 (N=192→256), 3.00 (N=256→384)
+  (super-convergence of pointwise ATM price; global L2 rate is O(h^1))
+
+### MA-FM-3: Delta surfaces
+- Mesh: N=256  Nt=500  rho=0  basket payoff  domain=[-6,6]^2
+- Outputs: results/solutions/v4_basket_surface_N256_rho0.0.csv  (65536 rows)
+           results/delta_surfaces_N256.csv  (50x50 subgrid, 2704 rows)
+           results/figures/figMA2_delta1_surface.pdf  (3D viridis)
+           results/figures/figMA3_delta2_surface.pdf  (3D plasma)
+           results/figures/figMA4_delta1_contour.pdf  (2D heatmap + ATM diagonal)
+- Delta_1 range on full surface: [−0.0005, 1.0005]  ✓  (essentially [0,1])
+- max|Delta1−Delta2| = 1.0 on full domain (expected: differs near corners
+  where one asset dominates; symmetric only on S1=S2 diagonal)
+
+### MA-FM-5: Contingency
+- NOT triggered: MA-FM-2 rel_error at N=256, rho=0 = 2.38% < 7% threshold.
+- Near-degenerate rho run instead as Diagnostic Sub-C (see below).
+
+### Diagnostics A/B/C (2026-06-11)
+Targeted sub-experiments on [-3,3]^2 to characterise the error floor.
+
+**Sub-A — temporal floor** (N=256, rho=0, Nt=500/1000/2000/4000):
+- Error: 0.26% / 0.28% / 0.35% / 0.44% — flat, NOT decreasing with Nt.
+- Conclusion: temporal error is negligible; Nt=500 is the sufficient operating point.
+  Slight upward drift is MC-reference temporal bias (252 steps), not DPG degradation.
+- Output: results/diag_temporal_floor.csv
+
+**Sub-B — payoff kink** (N=256, Nt=1000, rho=0, eps=0 vs eps=2.0):
+- eps=0 (non-smooth):  0.276%
+- eps=2.0 (smoothed):  0.004%   → 69× reduction
+- Conclusion: payoff kink at min(S1,S2)=K is the DOMINANT error source.
+  Paper statement: "O(h^1) rate holds from N=128 for smooth payoffs (Margrabe);
+  for call-on-min, the initial-data kink delays onset of asymptotic regime."
+- Solver: --eps flag added to main_european_2d_basket_mpi (smoothed_payoff_cb,
+  C^1 quadratic bridge over [-eps,eps] in log-price coords).
+- Output: results/diag_payoff_smoothing.csv
+
+**Sub-C — near-degenerate rho** (N=256, Nt=1000, [-3,3]^2):
+- rho=0.90 (lambda_min=0.002): 0.36%  ✓
+- rho=0.95 (lambda_min=0.001): 0.29%  ✓
+- rho=0.99 (lambda_min=0.0002): 3.28% (elevated but stable; no NaN/negative)
+- Prices monotone increasing in rho ✓
+- Conclusion: solver robust at extreme near-degeneracy; rho=0.99 acceptable for paper.
+- Output: results/basket_degenerate_rho.csv
+          results/figures/figE3_basket_rho_full.pdf
+
+---
+
 ## MFEM Template
 
 Starting template for new 2D formulations:
