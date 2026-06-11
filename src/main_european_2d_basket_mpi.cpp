@@ -153,12 +153,26 @@ static double margrabe_exact(double x1, double x2, double tau,
 // Global params for MFEM FunctionCoefficient callbacks
 // ---------------------------------------------------------------------------
 static double g_K, g_r, g_sigma1, g_sigma2, g_tau_cb;
-static double g_rho     = 0.0;   // correlation (needed by mfg source)
-static double g_mfg_dt  = 1.0;   // dt for manufactured source term
+static double g_rho        = 0.0;   // correlation (needed by mfg source)
+static double g_mfg_dt     = 1.0;   // dt for manufactured source term
+static double g_smooth_eps = 0.0;   // payoff smoothing radius in log-price units (0=off)
 
 // Payoff: max(min(S1,S2)-K,0) = K*max(min(exp(x1),exp(x2))-1,0)
 static double payoff_cb(const Vector& xv) {
     return g_K * std::max(std::min(std::exp(xv[0]), std::exp(xv[1])) - 1.0, 0.0);
+}
+
+// C^1 smoothed payoff: quadratic cap over [-eps,eps] in min(x1,x2) log-price coords.
+// Joins linearly (f'=1) at m=eps; f(m)=0 for m<=-eps.
+// Approximates max(exp(m)-1,0) near the kink; exact for |m|>=eps.
+static double smoothed_payoff_cb(const Vector& xv) {
+    const double eps = g_smooth_eps;
+    const double m   = std::min(xv[0], xv[1]);  // min log-price
+    if (m <= -eps) return 0.0;
+    if (m >= eps)  return g_K * (std::exp(m) - 1.0);
+    // Quadratic bridge: (m+eps)^2/(4*eps), matches f=0,f'=0 at m=-eps
+    // and f=eps, f'=1 at m=eps (via linearisation exp(m)-1≈m for small eps)
+    return g_K * (m + eps) * (m + eps) / (4.0 * eps);
 }
 
 // Right BC (x1=x1_max): S1 large → call-on-min ≈ call on S2
@@ -274,6 +288,7 @@ int main(int argc, char* argv[])
     int    N_t_ov    = -1;
     int    p_ov      = -1;
     int    delta_p_ov = -1;
+    double eps_smooth_ov = 0.0;
 
     OptionsParser args(argc, argv);
     args.AddOption(&config_file, "-c", "--config", "JSON config file");
@@ -297,6 +312,8 @@ int main(int argc, char* argv[])
     args.AddOption(&x1_max_ov, "--x1_max", "--x1_max", "Override domain x1_max");
     args.AddOption(&x2_min_ov, "--x2_min", "--x2_min", "Override domain x2_min");
     args.AddOption(&x2_max_ov, "--x2_max", "--x2_max", "Override domain x2_max");
+    args.AddOption(&eps_smooth_ov, "--eps", "--eps",
+                   "Payoff smoothing radius in log-price units (0=off, 2.0=diagnostic)");
     args.AddOption(&mfg_mode, "--mfg",  "--mfg",
                    "-no-mfg", "--no-mfg",
                    "Manufactured-solution mode: domain [-1,1]^2, exact source");
@@ -375,7 +392,7 @@ int main(int argc, char* argv[])
     const double min_eig = MinEigenvalueA(sigma1, sigma2, rho);
 
     g_K = K; g_r = r; g_sigma1 = sigma1; g_sigma2 = sigma2; g_tau_cb = 0.0;
-    g_rho = rho;
+    g_rho = rho; g_smooth_eps = eps_smooth_ov;
 
     const double Lx1 = x1_max - x1_min;
     const double Lx2 = x2_max - x2_min;
@@ -514,6 +531,9 @@ int main(int argc, char* argv[])
     } else if (margrabe_mode) {
         FunctionCoefficient mrg_ic_fc(margrabe_payoff_cb);
         u_prev_gf.ProjectCoefficient(mrg_ic_fc);
+    } else if (g_smooth_eps > 0.0) {
+        FunctionCoefficient smooth_fc(smoothed_payoff_cb);
+        u_prev_gf.ProjectCoefficient(smooth_fc);
     } else {
         FunctionCoefficient payoff_fc(payoff_cb);
         u_prev_gf.ProjectCoefficient(payoff_fc);
