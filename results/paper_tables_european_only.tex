@@ -67,3 +67,44 @@
   \end{tabular}
 \end{table}
 }
+
+
+
+% --- Session 2: Greek tables ---
+\newcommand{\tableEuropeanGreeks}{%
+% Delta convergence + best Gamma method (LSQ-P2)
+\begin{table}[htb]
+  \centering
+  \caption{Delta and Gamma convergence for the 1D European call ($\sigma=0.20$, $r=0.05$, $T=1$, $K=100$, $N_t=1000$, domain $[-3,3]$). Delta is extracted directly from the primary ultraweak variable $\vartheta_h = \partial u_h/\partial x$. Gamma is recovered by LSQ-P2 local polynomial fitting.}
+  \label{tab:greeks}
+  \begin{tabular}{ccccccc}
+    \toprule
+    $N_x$ & $h$ & $\Delta$ error & EOC$_\Delta$ & $\Gamma$ error (LSQ-P2) & EOC$_\Gamma$ \\
+    \midrule
+    64 & $6/64$ & $3.62\times10^{-3}$ & — & $7.35\times10^{-4}$ & 0.76 \\
+    128 & $6/128$ & $1.06\times10^{-3}$ & 1.78 & $2.00\times10^{-4}$ & — \\
+    256 & $6/256$ & $4.31\times10^{-4}$ & 1.29 & $5.26\times10^{-5}$ & — \\
+    512 & $6/512$ & $1.18\times10^{-3}$ & — & $5.39\times10^{-5}$ & — \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+}
+
+\newcommand{\tableGammaReconstruction}{%
+% Gamma reconstruction: 4 methods, 4 mesh levels
+\begin{table}[htb]
+  \centering
+  \caption{Gamma reconstruction accuracy for the 1D European call at the ATM point ($S=K=100$, $x=0$). Four methods applied to $\vartheta_h = \partial u_h/\partial x$: centered FD (raw\_FD), Savitzky-Golay $P_2$ (LSQ-P2), Savitzky-Golay $P_3$ (LSQ-P3), and quadratic spline smoothing (L2-P2). Exact: $\Gamma = 0.0188$.}
+  \label{tab:gamma-reconstruction}
+  \begin{tabular}{cccccccccc}
+    \toprule
+    $N_x$ & $h$ & raw FD err & EOC & LSQ-P2 err & EOC & LSQ-P3 err & EOC & L2-P2 err & EOC \\
+    \midrule
+    64 & $6/64$ & $2.71\times10^{-4}$ & — & $7.35\times10^{-4}$ & 0.76 & $1.80\times10^{-4}$ & 1.39 & $3.67\times10^{-4}$ & 0.00 \\
+    128 & $6/128$ & $7.25\times10^{-5}$ & — & $2.00\times10^{-4}$ & — & $2.77\times10^{-5}$ & — & $2.17\times10^{-4}$ & — \\
+    256 & $6/256$ & $2.09\times10^{-5}$ & — & $5.26\times10^{-5}$ & — & $1.06\times10^{-5}$ & — & $8.27\times10^{-5}$ & — \\
+    512 & $6/512$ & $5.27\times10^{-5}$ & — & $5.39\times10^{-5}$ & — & $5.24\times10^{-5}$ & — & $8.26\times10^{-5}$ & — \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+}
