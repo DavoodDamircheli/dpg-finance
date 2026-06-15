@@ -1,0 +1,72 @@
+
+============================================================
+SUB-A: temporal floor  N=256 rho=0 [-3,3]^2
+============================================================
+MC reference: 3.29717 ±0.00495
+
+  Nt=500 ...
+  $ mpirun -np 16 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --N_x 256 --N_y 256 --N_t 500 --rho 0.0 --no-save-surface
+  DPG=3.30571  abs_err=0.00854  rel_err=0.259%  t=254s
+
+  Nt=1000 ...
+  $ mpirun -np 16 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --N_x 256 --N_y 256 --N_t 1000 --rho 0.0 --no-save-surface
+  DPG=3.30628  abs_err=0.00911  rel_err=0.276%  t=507s
+
+  Nt=2000 ...
+  $ mpirun -np 16 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --N_x 256 --N_y 256 --N_t 2000 --rho 0.0 --no-save-surface
+  DPG=3.30855  abs_err=0.01138  rel_err=0.345%  t=1016s
+
+  Nt=4000 ...
+  $ mpirun -np 16 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --N_x 256 --N_y 256 --N_t 4000 --rho 0.0 --no-save-surface
+  DPG=3.31178  abs_err=0.01461  rel_err=0.443%  t=2068s
+
+  DECISION: plateau detected — kink-dominated, not temporal
+Wrote results/diag_temporal_floor.csv
+
+============================================================
+SUB-B: payoff smoothing  N=256 Nt=1000 rho=0 [-3,3]^2
+============================================================
+
+  eps=0.0 ...
+  $ mpirun -np 16 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --N_x 256 --N_y 256 --N_t 1000 --rho 0.0 --no-save-surface
+  DPG=3.30628  MC=3.29717  abs_err=0.00911  rel_err=0.276%  t=505s
+
+  eps=2.0 ...
+  Computing MC reference for smoothed payoff (eps=2.0) ...
+  MC_smooth=44.02689 ±0.00531
+  $ mpirun -np 16 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --N_x 256 --N_y 256 --N_t 1000 --rho 0.0 --no-save-surface --eps 2.0
+  DPG=44.02854  MC=44.02689  abs_err=0.00165  rel_err=0.004%  t=525s
+
+  DIAGNOSIS: smoothing reduces error by >50% → kink IS the bottleneck
+Wrote results/diag_payoff_smoothing.csv
+
+============================================================
+SUB-C: near-degenerate rho  N=256 Nt=1000 [-3,3]^2
+============================================================
+  Computing MC reference for rho=0.9 ...
+    MC=8.18429 ±0.00911
+  Computing MC reference for rho=0.95 ...
+    MC=8.84900 ±0.00953
+  Computing MC reference for rho=0.99 ...
+    MC=9.73707 ±0.01004
+
+  rho=0.9  lambda_min=0.00200 ...
+  $ mpirun -np 16 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --N_x 256 --N_y 256 --N_t 1000 --rho 0.9 --no-save-surface
+  DPG=8.21386  MC=8.18429  rel_err=0.36%  t=512s
+
+  rho=0.95  lambda_min=0.00100 ...
+  $ mpirun -np 16 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --N_x 256 --N_y 256 --N_t 1000 --rho 0.95 --no-save-surface
+  DPG=8.82319  MC=8.84900  rel_err=0.29%  t=511s
+
+  rho=0.99  lambda_min=0.00020 ...
+  $ mpirun -np 16 ./build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --N_x 256 --N_y 256 --N_t 1000 --rho 0.99 --no-save-surface
+  DPG=9.41803  MC=9.73707  rel_err=3.28%  t=553s
+  Prices monotone in rho ✓
+Wrote results/basket_degenerate_rho.csv
+Saved results/figures/figE3_basket_rho_full.{pdf,png}
+
+=== All sub-experiments complete ===
+  results/diag_temporal_floor.csv
+  results/diag_payoff_smoothing.csv
+  results/basket_degenerate_rho.csv
+  results/figures/figE3_basket_rho_full.{pdf,png}

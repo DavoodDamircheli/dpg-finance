@@ -1,0 +1,2 @@
+N_x,h,ndof_u,ndof_sigma,ndof_trace,total_ndof,price_at_S0,exact_price_at_S0,L2_error,Linf_error
+64,0.09375,256,512,709,1477,10.84420423,10.45058357,0.3456140648,3.668643573

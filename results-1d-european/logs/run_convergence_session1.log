@@ -1,0 +1,181 @@
+
+=== S1: Spatial floor check (N_x=64, N_t=5000) ===
+  $ /home/davood/projects/dpg-finance/build/bin/main_european_1d_primal --config /tmp/v1_tmp_p9v2s22r.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v1_floor_check.csv
+V1 Galerkin/primal-DPG  |  sigma=0.2 r=0.05 T=1 K=100
+b=r-sigma^2/2=0.03  diff=0.02
+Mesh: N_x=64  h=0.09375  N_t=5000  dt=0.0002
+FEM: p=1
+
+H1(1) DOFs: 65
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=64  h=9.3750e-02  L2_err=1.1214e+00  Linf_err=2.1103e+00
+ATM_PRICE=1.037571e+01  EXACT_ATM=1.045058e+01
+  $ mpirun -np 4 /home/davood/projects/dpg-finance/build/bin/main_european_1d_ultraweak_mpi --config /home/davood/projects/dpg-finance/config/european_1d_ultraweak.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v2_floor_check.csv -r 0 --N_t 5000
+V2 Ultraweak DPG (quasi-2D, MPI)
+  sigma=0.2 r=0.05 T=1 K=100
+  b=r-sigma^2/2=0.03  diff=0.02
+  Mesh: N_x=64 h=0.09375  N_t=5000  dt=0.0002
+  FEM: p=2  delta_p=1
+
+Trial DOFs: u=256 sigma=512 hatu=323 hatf=386
+
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=64  h=9.3750e-02  L2_err=3.4561e-01  Linf_err=3.6686e+00
+Delta_L2=1.6840e-03  Delta_Linf=3.0221e-03
+Gamma_L2=5.2525e-04  Gamma_Linf=9.7862e-04
+ATM_PRICE=1.084420e+01  EXACT_ATM=1.045058e+01
+Delta CSV: results/greeks/v2_delta_ultraweak.csv
+  S1: primal N_x=64 L2_error=1.1214e+00  WARNING: L2_error > 0.5 — increase coarsest mesh to N_x=128
+  S1: ultraweak N_x=64 L2_error=3.4561e-01  OK
+  Written: /home/davood/projects/dpg-finance/results/convergence/spatial_floor_check.txt
+
+=== S2: V1 primal spatial sweep (N_x=64,128,256,512, N_t=5000) ===
+  V1 N_x=64 N_t=5000
+  $ /home/davood/projects/dpg-finance/build/bin/main_european_1d_primal --config /tmp/v1_tmp_mthqk6gk.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v1_spatial_raw.csv
+V1 Galerkin/primal-DPG  |  sigma=0.2 r=0.05 T=1 K=100
+b=r-sigma^2/2=0.03  diff=0.02
+Mesh: N_x=64  h=0.09375  N_t=5000  dt=0.0002
+FEM: p=1
+
+H1(1) DOFs: 65
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=64  h=9.3750e-02  L2_err=1.1214e+00  Linf_err=2.1103e+00
+ATM_PRICE=1.037571e+01  EXACT_ATM=1.045058e+01
+  V1 N_x=128 N_t=5000
+  $ /home/davood/projects/dpg-finance/build/bin/main_european_1d_primal --config /tmp/v1_tmp_rfc_3ymw.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v1_spatial_raw.csv
+V1 Galerkin/primal-DPG  |  sigma=0.2 r=0.05 T=1 K=100
+b=r-sigma^2/2=0.03  diff=0.02
+Mesh: N_x=128  h=0.046875  N_t=5000  dt=0.0002
+FEM: p=1
+
+H1(1) DOFs: 129
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=128  h=4.6875e-02  L2_err=1.1638e+00  Linf_err=1.5139e+00
+ATM_PRICE=1.045522e+01  EXACT_ATM=1.045058e+01
+  V1 N_x=256 N_t=5000
+  $ /home/davood/projects/dpg-finance/build/bin/main_european_1d_primal --config /tmp/v1_tmp_k00x6mg5.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v1_spatial_raw.csv
+V1 Galerkin/primal-DPG  |  sigma=0.2 r=0.05 T=1 K=100
+b=r-sigma^2/2=0.03  diff=0.02
+Mesh: N_x=256  h=0.0234375  N_t=5000  dt=0.0002
+FEM: p=1
+
+H1(1) DOFs: 257
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=256  h=2.3438e-02  L2_err=3.5666e-01  Linf_err=4.4856e-01
+ATM_PRICE=1.045117e+01  EXACT_ATM=1.045058e+01
+  V1 N_x=512 N_t=5000
+  $ /home/davood/projects/dpg-finance/build/bin/main_european_1d_primal --config /tmp/v1_tmp_8qkxtdi7.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v1_spatial_raw.csv
+V1 Galerkin/primal-DPG  |  sigma=0.2 r=0.05 T=1 K=100
+b=r-sigma^2/2=0.03  diff=0.02
+Mesh: N_x=512  h=0.0117188  N_t=5000  dt=0.0002
+FEM: p=1
+
+H1(1) DOFs: 513
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=512  h=1.1719e-02  L2_err=3.9423e-02  Linf_err=5.3327e-02
+ATM_PRICE=1.044959e+01  EXACT_ATM=1.045058e+01
+  Written: /home/davood/projects/dpg-finance/results/convergence/v1_spatial_primal.csv
+
+=== S3: V2 ultraweak spatial sweep (N_x=64,128,256,512, N_t=5000) ===
+  V2 N_x=64 N_t=5000 (np=4)
+  $ mpirun -np 4 /home/davood/projects/dpg-finance/build/bin/main_european_1d_ultraweak_mpi --config /home/davood/projects/dpg-finance/config/european_1d_ultraweak.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v2_spatial_raw.csv -r 0 --N_t 5000
+V2 Ultraweak DPG (quasi-2D, MPI)
+  sigma=0.2 r=0.05 T=1 K=100
+  b=r-sigma^2/2=0.03  diff=0.02
+  Mesh: N_x=64 h=0.09375  N_t=5000  dt=0.0002
+  FEM: p=2  delta_p=1
+
+Trial DOFs: u=256 sigma=512 hatu=323 hatf=386
+
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=64  h=9.3750e-02  L2_err=3.4561e-01  Linf_err=3.6686e+00
+Delta_L2=1.6840e-03  Delta_Linf=3.0221e-03
+Gamma_L2=5.2525e-04  Gamma_Linf=9.7862e-04
+ATM_PRICE=1.084420e+01  EXACT_ATM=1.045058e+01
+Delta CSV: results/greeks/v2_delta_ultraweak.csv
+  V2 N_x=128 N_t=5000 (np=4)
+  $ mpirun -np 4 /home/davood/projects/dpg-finance/build/bin/main_european_1d_ultraweak_mpi --config /home/davood/projects/dpg-finance/config/european_1d_ultraweak.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v2_spatial_raw.csv -r 1 --N_t 5000
+V2 Ultraweak DPG (quasi-2D, MPI)
+  sigma=0.2 r=0.05 T=1 K=100
+  b=r-sigma^2/2=0.03  diff=0.02
+  Mesh: N_x=128 h=0.046875  N_t=5000  dt=0.0002
+  FEM: p=2  delta_p=1
+
+Trial DOFs: u=512 sigma=1024 hatu=643 hatf=770
+
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=128  h=4.6875e-02  L2_err=9.5257e-02  Linf_err=1.1519e+00
+Delta_L2=5.4379e-04  Delta_Linf=9.4975e-04
+Gamma_L2=1.5032e-04  Gamma_Linf=2.8137e-04
+ATM_PRICE=1.055262e+01  EXACT_ATM=1.045058e+01
+Delta CSV: results/greeks/v2_delta_ultraweak.csv
+  V2 N_x=256 N_t=5000 (np=4)
+  $ mpirun -np 4 /home/davood/projects/dpg-finance/build/bin/main_european_1d_ultraweak_mpi --config /home/davood/projects/dpg-finance/config/european_1d_ultraweak.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v2_spatial_raw.csv -r 2 --N_t 5000
+V2 Ultraweak DPG (quasi-2D, MPI)
+  sigma=0.2 r=0.05 T=1 K=100
+  b=r-sigma^2/2=0.03  diff=0.02
+  Mesh: N_x=256 h=0.0234375  N_t=5000  dt=0.0002
+  FEM: p=2  delta_p=1
+
+Trial DOFs: u=1024 sigma=2048 hatu=1283 hatf=1538
+
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=256  h=2.3438e-02  L2_err=2.8442e-02  Linf_err=4.0005e-01
+Delta_L2=8.3356e-04  Delta_Linf=1.5756e-03
+Gamma_L2=6.0251e-05  Gamma_Linf=8.3209e-05
+ATM_PRICE=1.045055e+01  EXACT_ATM=1.045058e+01
+Delta CSV: results/greeks/v2_delta_ultraweak.csv
+  V2 N_x=512 N_t=5000 (np=4)
+  $ mpirun -np 4 /home/davood/projects/dpg-finance/build/bin/main_european_1d_ultraweak_mpi --config /home/davood/projects/dpg-finance/config/european_1d_ultraweak.json --csv-path /home/davood/projects/dpg-finance/results/convergence/_v2_spatial_raw.csv -r 3 --N_t 5000
+V2 Ultraweak DPG (quasi-2D, MPI)
+  sigma=0.2 r=0.05 T=1 K=100
+  b=r-sigma^2/2=0.03  diff=0.02
+  Mesh: N_x=512 h=0.0117188  N_t=5000  dt=0.0002
+  FEM: p=2  delta_p=1
+
+Trial DOFs: u=2048 sigma=4096 hatu=2563 hatf=3074
+
+Time loop: 5000 steps...
+
+--- Results ---
+N_x=512  h=1.1719e-02  L2_err=2.9514e-02  Linf_err=3.0665e-01
+Delta_L2=4.5694e-03  Delta_Linf=8.6977e-03
+Gamma_L2=2.1106e-04  Gamma_Linf=3.0613e-04
+ATM_PRICE=1.029970e+01  EXACT_ATM=1.045058e+01
+Delta CSV: results/greeks/v2_delta_ultraweak.csv
+  Written: /home/davood/projects/dpg-finance/results/convergence/v2_spatial_ultraweak.csv
+
+=== S4: Combined comparison CSV ===
+Traceback (most recent call last):
+  File "/home/davood/projects/dpg-finance/scripts/run_european_convergence.py", line 526, in <module>
+    main()
+  File "/home/davood/projects/dpg-finance/scripts/run_european_convergence.py", line 321, in main
+    v1 = read_spatial_csv(v1_spatial_csv)
+  File "/home/davood/projects/dpg-finance/scripts/run_european_convergence.py", line 215, in read_spatial_csv
+    return np.genfromtxt(csv_path, delimiter=",", names=True, comments="#",
+  File "/home/davood/.local/lib/python3.10/site-packages/numpy/lib/_npyio_impl.py", line 2333, in genfromtxt
+    raise ValueError(errmsg)
+ValueError: Some errors were detected !
+    Line #3 (got 10 columns instead of 7)
+    Line #4 (got 10 columns instead of 7)
+    Line #5 (got 10 columns instead of 7)
+    Line #6 (got 10 columns instead of 7)
+    Line #7 (got 10 columns instead of 7)

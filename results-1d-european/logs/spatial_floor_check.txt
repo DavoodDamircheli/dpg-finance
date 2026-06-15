@@ -1,0 +1,4 @@
+# S1: Spatial floor check at N_x=64, N_t=5000
+solver,N_x,N_t,L2_error,note
+primal,64,5000,1.121375e+00,WARNING: L2_error > 0.5 — increase coarsest mesh to N_x=128
+ultraweak,64,5000,3.456141e-01,OK
