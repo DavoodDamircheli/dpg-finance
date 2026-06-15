@@ -60,12 +60,12 @@ def to_grid(rows, key):
     if len(s1u) < 2 or len(s2u) < 2:
         return None, None, None
 
-    lut = {(round(r["S1"], 6), round(r["S2"], 6)): r[key] for r in rows}
+    lut = {(round(float(r["S1"]), 6), round(float(r["S2"]), 6)): r[key] for r in rows}
     S1G, S2G = np.meshgrid(s1u, s2u)
     ZG = np.full(S1G.shape, np.nan)
     for j, s2 in enumerate(s2u):
         for i, s1 in enumerate(s1u):
-            v = lut.get((round(s1, 6), round(s2, 6)))
+            v = lut.get((round(float(s1), 6), round(float(s2), 6)))
             if v is not None:
                 ZG[j, i] = v
     return S1G, S2G, ZG
@@ -107,8 +107,8 @@ def plot_contour(rows, out_path, s_min, s_max):
         print(f"  Skip {out_path}: insufficient grid data", file=sys.stderr)
         return
 
-    lut = {(round(r["S1"], 6), round(r["S2"], 6)): r["delta1"] for r in rows}
-    Z = np.array([[lut.get((round(s1, 6), round(s2, 6)), np.nan)
+    lut = {(round(float(r["S1"]), 6), round(float(r["S2"]), 6)): r["delta1"] for r in rows}
+    Z = np.array([[lut.get((round(float(s1), 6), round(float(s2), 6)), np.nan)
                    for s1 in s1u]
                   for s2 in s2u])
 
