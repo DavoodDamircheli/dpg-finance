@@ -347,6 +347,75 @@ Targeted sub-experiments on [-3,3]^2 to characterise the error floor.
 
 ---
 
+## Phase MB — Multi-Benchmark Experiments
+
+### Status: MB-0 and MB-1 COMPLETED (2026-06-12)
+
+### MB-0: Stulz best-of call formula verification
+
+**Formula (Stulz 1982):** C_max = BS(S1,K) + BS(S2,K) − C_min (parity identity)
+
+```
+sig_hat = sqrt(sig1^2 - 2*rho*sig1*sig2 + sig2^2)
+y1 = (log(S1/S2) + 0.5*sig_hat^2*T) / (sig_hat*sqrt(T))
+y2 = (log(S2/S1) + 0.5*sig_hat^2*T) / (sig_hat*sqrt(T))
+rho1 = (sig1 - rho*sig2) / sig_hat
+rho2 = (sig2 - rho*sig1) / sig_hat
+C_min = S1*N2(d1, -y1, -rho1) + S2*N2(d2, -y2, -rho2)
+       - K*exp(-r*T)*N2(d1-sig1*sqrt(T), d2-sig2*sqrt(T), rho)
+```
+
+**Critical sign convention:** y1 and y2 must be NEGATED in N2 calls (second argument is -y1, not +y1).
+**sig_hat^2/2, not sig1^2-rho*sig1*sig2:** these coincide only when sig1=sig2; use sig_hat^2/2 always.
+
+**Reference values** (S1=S2=K=100, r=0.05, T=1, sig1=sig2=0.2, rho=0.5):
+- C_min = 5.38263940
+- C_max = 15.51852774  (ATM_EXACT used in MB-1)
+- dblquad ground truth vs Stulz: rel diff = 1.95e-7  ✓
+
+**GH quadrature warning:** kinked payoff (max(S1,S2)-K)^+ oscillates under Gauss-Hermite
+(n=64: 15.503, n=96: 15.494, true: 15.519). Use scipy.integrate.dblquad for references.
+
+**Script:** `scripts/mb0_verification.py` — all checks PASS
+**Log:** `results_v5_benchmarks/logs/MB0_verification.log`
+
+---
+
+### MB-1: Best-of call (Stulz) spatial convergence
+
+**Payoff:** (max(S1,S2)-K)^+  benchmarked against Stulz (1982) exact formula
+**Solver:** `--bestof` flag added to `src/main_european_2d_basket_mpi.cpp`
+- Bivariate normal CDF: 10-pt GL quadrature on conditional decomposition
+- Exact Stulz BCs on all 4 faces (negative trace convention: u_hat = -u_exact)
+- Prints L2_ERROR=, PRICE_ATM=, BESTOF_MODE=1 to stdout
+
+**Configuration:** domain=[-3,3]^2, sig1=sig2=0.2, rho=0.5, r=0.05, T=1, K=100,
+p=1 in code (L2(0) trial = piecewise constants), delta_p=2, Nt=2*N
+
+**Results** (ultraweak only — no primal 2D solver exists):
+
+| N   | Nt   | L2 error   | EOC  | ATM DPG  | Rel error |
+|-----|------|------------|------|----------|-----------|
+| 128 | 256  | 6.610e+01  | ---  | 15.6232  | 0.674%    |
+| 192 | 384  | 4.511e+01  | 0.94 | 15.5673  | 0.314%    |
+| 256 | 512  | 3.481e+01  | 0.90 | 15.5497  | 0.201%    |
+| 384 | 768  | 2.459e+01  | 0.86 | 15.5340  | 0.099%    |
+| 512 | 1024 | 1.965e+01  | 0.78 | 15.5273  | 0.057%    |
+
+EOC drops to 0.78 at N=384→512: payoff kink at max(S1,S2)=K delays asymptotic regime
+(same mechanism as call-on-min Sub-B diagnostic). ATM price converges cleanly.
+
+**Outputs:**
+- `results_v5_benchmarks/csv/bestof_spatial_convergence.csv`
+- `results_v5_benchmarks/tex/table_bestof_spatial.tex`  (`\tableBestofSpatialConvergence`)
+- `results_v5_benchmarks/figures/fig_bestof_spatial_convergence.pdf`
+
+**Scripts:**
+- `scripts/run_bestof_spatial_convergence.py  [--np 8]`  → CSV
+- `scripts/plot_bestof_spatial_convergence.py`            → LaTeX + figure
+
+---
+
 ## MFEM Template
 
 Starting template for new 2D formulations:
