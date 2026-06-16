@@ -1,0 +1,25 @@
+\newcommand{\tableBestofSpatialConvergence}{%
+\begin{table}[ht]
+\centering
+\caption{
+  Spatial convergence of the DPG best-of call option price.
+  Ultraweak formulation (only 2D solver available).
+  Domain $[-3,3]^2$ in log-price coordinates,
+  $\sigma_1=\sigma_2=0.20$, $\rho=0.50$, $r=0.05$, $T=1$, $K=100$.
+  Trial space: $L^2$ degree $p=0$; enrichment $\Delta p=2$ (test order 3).
+  Benchmark: Stulz (1982) closed-form best-of call, $U^*=15.5185$.
+  $N_t = 2N$.}
+\label{tab:bestof_spatial}
+\begin{tabular}{@{}rrrrrl@{}}
+\toprule
+$N$ & $N_t$ & $\|u_h - u^*\|_{L^2}$ & EOC & $u_h(0,0,T)$ & $U^*$ \\
+\midrule
+  128 & 256 & $6.610e+01$ & --- & $15.6232$ & $15.5185$ \\
+  192 & 384 & $4.511e+01$ & 0.94 & $15.5673$ & $15.5185$ \\
+  256 & 512 & $3.481e+01$ & 0.90 & $15.5497$ & $15.5185$ \\
+  384 & 768 & $2.459e+01$ & 0.86 & $15.5340$ & $15.5185$ \\
+  512 & 1024 & $1.965e+01$ & 0.78 & $15.5273$ & $15.5185$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}

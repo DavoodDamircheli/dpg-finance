@@ -129,6 +129,91 @@ static double bs_call(double S, double K, double r, double sig, double tau) {
     return S * ncdf(d1) - K * std::exp(-r * tau) * ncdf(d2);
 }
 
+// ---------------------------------------------------------------------------
+// Bivariate normal CDF: P(X <= a, Y <= b; rho)
+// 10-point Gauss-Legendre quadrature on the conditional decomposition:
+//   N2(a,b;rho) = integral_{-7.5}^{a} N((b-rho*t)/sqrt(1-rho^2)) * phi(t) dt
+// Tails |t| > 7.5 contribute < 1e-13 and are dropped.
+// ---------------------------------------------------------------------------
+static double bvn_cdf(double a, double b, double rho) {
+    if (a < -7.5 || b < -7.5) return 0.0;
+    if (a >  7.5) return ncdf(b);
+    if (b >  7.5) return ncdf(a);
+    if (std::abs(rho) < 1e-10) return ncdf(a) * ncdf(b);
+
+    // 10-pt GL nodes and weights on [-1, 1]
+    static const double gx[] = {
+        -0.9739065285171717, -0.8650633666889845, -0.6794095682990244,
+        -0.4333953941292472, -0.1488743389816312,
+         0.1488743389816312,  0.4333953941292472,
+         0.6794095682990244,  0.8650633666889845,  0.9739065285171717
+    };
+    static const double gw[] = {
+        0.0666713443086881, 0.1494513491505806, 0.2190863625159820,
+        0.2692667193099963, 0.2955242247147529,
+        0.2955242247147529, 0.2692667193099963,
+        0.2190863625159820, 0.1494513491505806, 0.0666713443086881
+    };
+    const double sq_r = std::sqrt(1.0 - rho * rho);
+    const double lo = -7.5, hi = a;
+    const double half = 0.5 * (hi - lo), mid = 0.5 * (hi + lo);
+    double sum = 0.0;
+    for (int i = 0; i < 10; i++) {
+        const double t   = mid + half * gx[i];
+        const double phi = std::exp(-0.5 * t * t) / std::sqrt(2.0 * M_PI);
+        sum += gw[i] * ncdf((b - rho * t) / sq_r) * phi;
+    }
+    return half * sum;
+}
+
+// ---------------------------------------------------------------------------
+// Stulz (1982) call-on-minimum and call-on-maximum (best-of call)
+// C_min = S1*N2(d1,-y1,-rho1) + S2*N2(d2,-y2,-rho2) - K*e^{-rT}*N2(f1,f2,rho)
+// where y_i = (log(Si/Sj) + sig_hat^2*T/2) / (sig_hat*sqT)
+//       rho_i = (sig_i - rho*sig_j) / sig_hat
+// C_max = BS(S1,K) + BS(S2,K) - C_min  (parity identity)
+// ---------------------------------------------------------------------------
+static double stulz_call_min(double S1, double S2, double K,
+                              double T,  double r,
+                              double sig1, double sig2, double rho) {
+    if (T < 1e-14) return std::max(std::min(S1, S2) - K, 0.0);
+    const double sqT     = std::sqrt(T);
+    const double sig_hat = std::sqrt(sig1*sig1 - 2.0*rho*sig1*sig2 + sig2*sig2);
+
+    const double d1 = (std::log(S1/K) + (r + 0.5*sig1*sig1)*T) / (sig1*sqT);
+    const double d2 = (std::log(S2/K) + (r + 0.5*sig2*sig2)*T) / (sig2*sqT);
+    const double hv = 0.5 * sig_hat * sig_hat * T;
+    const double y1 = (std::log(S1/S2) + hv) / (sig_hat * sqT);
+    const double y2 = (std::log(S2/S1) + hv) / (sig_hat * sqT);
+    const double rho1 = (sig1 - rho*sig2) / sig_hat;
+    const double rho2 = (sig2 - rho*sig1) / sig_hat;
+
+    return S1 * bvn_cdf(d1, -y1, -rho1)
+         + S2 * bvn_cdf(d2, -y2, -rho2)
+         - K  * std::exp(-r*T) * bvn_cdf(d1 - sig1*sqT, d2 - sig2*sqT, rho);
+}
+
+// Best-of call: C_max = C_BS(S1,K) + C_BS(S2,K) - C_min
+static double stulz_bestof_exact(double S1, double S2, double K,
+                                  double T, double r,
+                                  double sig1, double sig2, double rho) {
+    if (T < 1e-14) return std::max(std::max(S1, S2) - K, 0.0);
+    return bs_call(S1, K, r, sig1, T)
+         + bs_call(S2, K, r, sig2, T)
+         - stulz_call_min(S1, S2, K, T, r, sig1, sig2, rho);
+}
+
+// In log-price coordinates x_i = log(S_i / S_ref)
+static double stulz_bestof_logprice(double x1, double x2, double tau,
+                                     double K, double r,
+                                     double sig1, double sig2, double rho,
+                                     double S_ref = 100.0) {
+    if (tau < 1e-14)
+        return std::max(S_ref * std::max(std::exp(x1), std::exp(x2)) - K, 0.0);
+    return stulz_bestof_exact(S_ref * std::exp(x1), S_ref * std::exp(x2),
+                               K, tau, r, sig1, sig2, rho);
+}
+
 // Margrabe payoff: (S1 - S2)+ with S_ref=100; x_i = log(S_i/S_ref)
 static inline double margrabe_payoff(double x1, double x2) {
     return std::max(100.0 * std::exp(x1) - 100.0 * std::exp(x2), 0.0);
@@ -237,6 +322,23 @@ static double margrabe_bc_cb(const Vector& xv) {
     return -margrabe_exact(xv[0], xv[1], g_tau_cb, g_sigma1, g_sigma2, g_rho);
 }
 
+// Best-of call callbacks: payoff = (max(S1,S2) - K)^+
+// S_ref = K (x_i = log(S_i/K)) so S_i = K*exp(x_i)
+static double bestof_payoff_cb(const Vector& xv) {
+    return g_K * std::max(std::max(std::exp(xv[0]), std::exp(xv[1])) - 1.0, 0.0);
+}
+
+static double bestof_exact_cb(const Vector& xv) {
+    return stulz_bestof_logprice(xv[0], xv[1], g_tau_cb,
+                                  g_K, g_r, g_sigma1, g_sigma2, g_rho, g_K);
+}
+
+// Negative trace convention: u_hat = -u_exact on essential BCs
+static double bestof_bc_cb(const Vector& xv) {
+    return -stulz_bestof_logprice(xv[0], xv[1], g_tau_cb,
+                                   g_K, g_r, g_sigma1, g_sigma2, g_rho, g_K);
+}
+
 // ---------------------------------------------------------------------------
 // Element-wise test norm coefficients (adjoint graph norm, element-local)
 // ---------------------------------------------------------------------------
@@ -273,6 +375,7 @@ int main(int argc, char* argv[])
     bool save_surface = true;
     bool mfg_mode      = false;   // manufactured-solution verification mode
     bool margrabe_mode = false;   // Margrabe exchange-option exact-solution mode
+    bool bestof_mode   = false;   // Stulz best-of call: exact BCs, L2 error output
 
     // CLI overrides (sentinel: NaN / -1 means "use config value")
     double rho_ov    = std::numeric_limits<double>::quiet_NaN();
@@ -320,6 +423,9 @@ int main(int argc, char* argv[])
     args.AddOption(&margrabe_mode, "--margrabe", "--margrabe",
                    "-no-margrabe", "--no-margrabe",
                    "Margrabe exchange-option mode: exact BCs/IC, L2 error output");
+    args.AddOption(&bestof_mode, "--bestof", "--bestof",
+                   "-no-bestof", "--no-bestof",
+                   "Best-of call (Stulz) mode: exact BCs on all 4 faces, L2 error output");
     args.Parse();
     if (!args.Good()) {
         if (myid == 0) args.PrintUsage(std::cout);
@@ -402,6 +508,8 @@ int main(int argc, char* argv[])
     if (myid == 0) {
         if (margrabe_mode)
             std::cout << "PAYOFF_TYPE=margrabe\nMARGRABE_MODE=1\n";
+        else if (bestof_mode)
+            std::cout << "PAYOFF_TYPE=bestof\nBESTOF_MODE=1\n";
         else
             std::cout << "PAYOFF_TYPE=call_on_min\n";
         if (mfg_mode)
@@ -531,6 +639,10 @@ int main(int argc, char* argv[])
     } else if (margrabe_mode) {
         FunctionCoefficient mrg_ic_fc(margrabe_payoff_cb);
         u_prev_gf.ProjectCoefficient(mrg_ic_fc);
+    } else if (bestof_mode) {
+        g_tau_cb = 0.0;
+        FunctionCoefficient bestof_ic_fc(bestof_payoff_cb);
+        u_prev_gf.ProjectCoefficient(bestof_ic_fc);
     } else if (g_smooth_eps > 0.0) {
         FunctionCoefficient smooth_fc(smoothed_payoff_cb);
         u_prev_gf.ProjectCoefficient(smooth_fc);
@@ -616,6 +728,13 @@ int main(int argc, char* argv[])
             hatu_gf.ProjectBdrCoefficient(mrg_bc_fc, bottom_bdr);
             hatu_gf.ProjectBdrCoefficient(mrg_bc_fc, right_bdr);
             hatu_gf.ProjectBdrCoefficient(mrg_bc_fc, top_bdr);
+        } else if (bestof_mode) {
+            // Exact Stulz BCs on all 4 faces (sign convention: u_hat = -u_exact)
+            FunctionCoefficient bestof_bc_fc(bestof_bc_cb);
+            hatu_gf.ProjectBdrCoefficient(bestof_bc_fc, left_bdr);
+            hatu_gf.ProjectBdrCoefficient(bestof_bc_fc, bottom_bdr);
+            hatu_gf.ProjectBdrCoefficient(bestof_bc_fc, right_bdr);
+            hatu_gf.ProjectBdrCoefficient(bestof_bc_fc, top_bdr);
         } else {
             FunctionCoefficient right_bc_fc(right_bc_cb);
             FunctionCoefficient top_bc_fc(top_bc_cb);
@@ -723,6 +842,23 @@ int main(int argc, char* argv[])
         FunctionCoefficient u_exact_fc(margrabe_exact_cb);
         double l2_err   = u_prev_gf.ComputeL2Error(u_exact_fc);
         double linf_loc = u_prev_gf.ComputeMaxError(u_exact_fc);
+        double linf_err = 0.0;
+        MPI_Allreduce(&linf_loc, &linf_err, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        if (myid == 0) {
+            std::cout << std::scientific << std::setprecision(10)
+                      << "L2_ERROR="   << l2_err   << "\n"
+                      << "LINF_ERROR=" << linf_err << "\n"
+                      << "NDOF_TOTAL=" << ndof_total << "\n";
+        }
+        // fall through to surface extraction for PRICE_ATM output
+    }
+
+    // ---- Best-of call (Stulz) exact-solution error (compute L2_ERROR, then fall through) ----
+    if (bestof_mode) {
+        g_tau_cb = T;
+        FunctionCoefficient u_bestof_exact_fc(bestof_exact_cb);
+        double l2_err   = u_prev_gf.ComputeL2Error(u_bestof_exact_fc);
+        double linf_loc = u_prev_gf.ComputeMaxError(u_bestof_exact_fc);
         double linf_err = 0.0;
         MPI_Allreduce(&linf_loc, &linf_err, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
         if (myid == 0) {

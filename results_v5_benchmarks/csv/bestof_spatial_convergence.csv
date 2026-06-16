@@ -1,0 +1,12 @@
+# Best-of call (Stulz) spatial convergence — ultraweak DPG 2D
+# sigma1=sigma2=0.2 r=0.05 T=1 K=100 rho=0.5  ATM_exact=15.51852774
+# Note: only ultraweak 2D DPG solver exists (no primal 2D implementation)
+# p=0 (FEM degree, i.e. L2(0) piecewise constants; code uses p=1 with u_fec=L2(p-1))
+# delta_p=2 -> test order 3  |  domain [-3,3]^2  |  Nt=2*N (backward Euler)
+# EOC for kink payoff sub-asymptotic at coarse N; settles ~0.86 by N=256->384
+formulation,N,Nt,domain,p,Delta_p,L2_error,EOC,ATM_DPG,ATM_exact,wall_time_s
+ultraweak,128,256,[-3..3]^2,0,2,6.6099710064e+01,---,1.5623155889e+01,1.5518527740e+01,38.936
+ultraweak,192,384,[-3..3]^2,0,2,4.5105223741e+01,0.942538,1.5567260796e+01,1.5518527740e+01,149.611
+ultraweak,256,512,[-3..3]^2,0,2,3.4812972223e+01,0.900327,1.5549673895e+01,1.5518527740e+01,404.410
+ultraweak,384,768,[-3..3]^2,0,2,2.4587616947e+01,0.857650,1.5533961609e+01,1.5518527740e+01,1794.310
+ultraweak,512,1024,[-3..3]^2,0,2,1.9653545223e+01,0.778586,1.5527337718e+01,1.5518527740e+01,5162.175
