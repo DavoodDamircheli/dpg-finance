@@ -1,0 +1,35 @@
+\newcommand{\tableBestofTemporalConvergence}{%
+\begin{table}[ht]
+\centering
+\caption{
+  Temporal convergence of the DPG best-of call option price.
+  Ultraweak formulation (only 2D solver available; primal 2D not implemented).
+  Fixed spatial mesh $N=384$, domain $[-3,3]^2$
+  in log-price coordinates.
+  $\sigma_1=\sigma_2=0.20$, $\rho=0.50$, $r=0.05$, $T=1$, $K=100$.
+  Trial space: $L^2$ degree $p=0$; enrichment $\Delta p=2$ (test order 3).
+  Time integrator: backward Euler.
+  \textbf{Observed:} $L^2$ error increases as $N_t$ increases (apparent EOC $\approx -0.03$),
+  indicating the payoff kink spatial error ($\approx 2.46 \times 10^1$ at $N=384$)
+  dominates at all $N_t$ studied; backward-Euler numerical dissipation at
+  coarse $N_t$ partially cancels the kink-induced spatial error, yielding
+  lower (but inaccurate) $L^2$ values. The true spatial floor is approached
+  as $N_t \to \infty$. Clean temporal convergence ($O(\Delta\tau)$) requires
+  $N \gg 384$ to reduce the spatial floor below the temporal error at $N_t=32$.
+  Benchmark: Stulz (1982) closed-form best-of call price, $U^*=15.5185$.}
+\label{tab:bestof_temporal}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$N_t$ & $\Delta\tau$ & $\|u_h - u^*\|_{L^2}$ & EOC & $u_h(0,0,T)$ & $U^*$ \\
+\midrule
+\multicolumn{6}{@{}l}{\textit{Ultraweak DPG}} \\[2pt]
+  32 & $0.03125$ & $2.321e+01$ & --- & $15.4905$ & $15.5185$ \\
+  64 & $0.01562$ & $2.329e+01$ & -0.00 & $15.5144$ & $15.5185$ \\
+  128 & $0.00781$ & $2.347e+01$ & -0.01 & $15.5263$ & $15.5185$ \\
+  256 & $0.00391$ & $2.381e+01$ & -0.02 & $15.5319$ & $15.5185$ \\
+  512 & $0.00195$ & $2.430e+01$ & -0.03 & $15.5338$ & $15.5185$ \\
+  1024 & $0.00098$ & $2.476e+01$ & -0.03 & $15.5339$ & $15.5185$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}

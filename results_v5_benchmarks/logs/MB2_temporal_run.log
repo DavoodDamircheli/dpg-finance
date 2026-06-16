@@ -1,0 +1,42 @@
+MB-2 Temporal convergence: best-of call (Stulz), ultraweak 2D DPG
+  NOTE: only ultraweak 2D solver exists (no primal 2D implementation)
+  Fixed N=384, domain=[-3.0,3.0]^2
+  rho=0.5  sigma1=sigma2=0.2  r=0.05  T=1  K=100
+  ATM exact (Stulz): 15.51852774
+  Prior spatial floor (N=384, Nt=768): L2=2.459e+01
+  Nt sequence: [32, 64, 128, 256, 512, 1024]
+
+
+Running Nt=32 (dtau=0.03125)...
+  [N=384 Nt=32 np=8] mpirun -np 8 build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --bestof --N_x 384 --N_y 384 --N_t 32 --rho 0.5 --no-save-surface
+  L2=2.3209e+01  EOC=---  ATM=15.49054  rel=0.180%  t=77.6s
+
+Running Nt=64 (dtau=0.01562)...
+  [N=384 Nt=64 np=8] mpirun -np 8 build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --bestof --N_x 384 --N_y 384 --N_t 64 --rho 0.5 --no-save-surface
+  L2=2.3288e+01  EOC=-0.005  ATM=15.51443  rel=0.026%  t=165.0s
+
+Running Nt=128 (dtau=0.00781)...
+  [N=384 Nt=128 np=8] mpirun -np 8 build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --bestof --N_x 384 --N_y 384 --N_t 128 --rho 0.5 --no-save-surface
+  L2=2.3465e+01  EOC=-0.011  ATM=15.52632  rel=0.050%  t=305.0s
+
+Running Nt=256 (dtau=0.00391)...
+  [N=384 Nt=256 np=8] mpirun -np 8 build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --bestof --N_x 384 --N_y 384 --N_t 256 --rho 0.5 --no-save-surface
+  L2=2.3809e+01  EOC=-0.021  ATM=15.53192  rel=0.086%  t=614.8s
+
+Running Nt=512 (dtau=0.00195)...
+  [N=384 Nt=512 np=8] mpirun -np 8 build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --bestof --N_x 384 --N_y 384 --N_t 512 --rho 0.5 --no-save-surface
+  L2=2.4301e+01  EOC=-0.030  ATM=15.53382  rel=0.099%  t=1209.5s
+
+Running Nt=1024 (dtau=0.00098)...
+  [N=384 Nt=1024 np=8] mpirun -np 8 build/bin/main_european_2d_basket_mpi -c config/european_2d_basket.json --bestof --N_x 384 --N_y 384 --N_t 1024 --rho 0.5 --no-save-surface
+  L2=2.4760e+01  EOC=-0.027  ATM=15.53385  rel=0.099%  t=2393.6s
+
+Saved results_v5_benchmarks/csv/bestof_temporal_convergence.csv
+
+── Verification ──────────────────────────────────────────────────
+  L2 monotone decreasing: WARNING: NOT monotone FAILED  ['2.321e+01', '2.329e+01', '2.347e+01', '2.381e+01', '2.430e+01', '2.476e+01']
+  EOC(Nt=64→128) = -0.011  WARNING: EOC=-0.011 outside [0.8,1.2] FAILED
+  EOC(Nt=128→256) = -0.021  WARNING: EOC=-0.021 outside [0.8,1.2] FAILED
+  Spatial floor check: L2(1024)/L2(32) = 1.067  WARNING: spatial floor = 106.7% of L2(Nt=32) FAILED (> 10%); consider N=512 for cleaner isolation
+
+Done. Run plot_bestof_temporal_convergence.py next.

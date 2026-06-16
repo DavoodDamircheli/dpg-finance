@@ -416,6 +416,53 @@ EOC drops to 0.78 at N=384→512: payoff kink at max(S1,S2)=K delays asymptotic 
 
 ---
 
+### MB-2: Best-of call — temporal convergence study (COMPLETED 2026-06-16)
+
+**Setup:** Fixed N=384, domain=[-3,3]^2, rho=0.5, Nt=32/64/128/256/512/1024, backward Euler.
+Same payoff/BCs as MB-1.
+
+**Result: error cancellation — L2 increases with finer Nt (wrong direction)**
+
+| Nt   | dtau     | L2 error   | EOC   | ATM DPG  | Rel error |
+|------|----------|------------|-------|----------|-----------|
+|   32 | 0.03125  | 2.321e+01  | ---   | 15.4905  | 0.180%    |
+|   64 | 0.01563  | 2.329e+01  | −0.00 | 15.5144  | 0.026%    |
+|  128 | 0.00781  | 2.347e+01  | −0.01 | 15.5263  | 0.050%    |
+|  256 | 0.00391  | 2.381e+01  | −0.02 | 15.5319  | 0.086%    |
+|  512 | 0.00195  | 2.430e+01  | −0.03 | 15.5338  | 0.099%    |
+| 1024 | 0.00098  | 2.476e+01  | −0.03 | 15.5339  | 0.099%    |
+
+**Interpretation:** At N=384 the payoff-kink spatial error (≈24.6 in L2) dominates the total
+error at ALL Nt values in the study range. Backward Euler's numerical dissipation at coarse Nt
+(large Δτ) over-smooths the solution, accidentally counteracting the kink-induced spatial error
+and yielding a *lower* total L2. As Nt increases and temporal smoothing vanishes, the true
+spatial floor is exposed (Nt=1024: L2=24.76, consistent with MB-1 spatial floor 24.59).
+
+All three verification checks failed:
+- L2 NOT monotone decreasing (increases with Nt)
+- EOC(64→128) = −0.01, EOC(128→256) = −0.02 (both outside [0.8,1.2])
+- Spatial floor / L2(Nt=32) = 1.067 >> 0.10 (spatial error ≫ temporal error even at Nt=32)
+
+**Conclusion:** Clean O(Δτ) temporal convergence for the best-of call requires N ≫ 384 to
+push the spatial floor well below the temporal error at Nt=32. The payoff kink at
+max(S1,S2)=K causes the spatial error to dominate temporal error at all mesh sizes studied.
+The ATM price converges to 15.5339 (0.099% rel error) for all Nt ≥ 512, consistent with
+the spatial floor from MB-1. There is no temporal error contamination in ATM at Nt ≥ 512.
+
+**Primal 2D:** N/A — no primal 2D solver exists.
+
+**Outputs:**
+- `results_v5_benchmarks/csv/bestof_temporal_convergence.csv`
+- `results_v5_benchmarks/tex/table_bestof_temporal.tex`  (`\tableBestofTemporalConvergence`)
+- `results_v5_benchmarks/figures/fig_bestof_temporal_convergence.pdf`
+- `results_v5_benchmarks/logs/MB2_temporal_run.log`
+
+**Scripts:**
+- `scripts/run_bestof_temporal_convergence.py  [--np 8]`  → CSV
+- `scripts/plot_bestof_temporal_convergence.py`            → LaTeX + figure
+
+---
+
 ## MFEM Template
 
 Starting template for new 2D formulations:
