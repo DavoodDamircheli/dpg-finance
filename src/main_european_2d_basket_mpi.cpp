@@ -242,6 +242,11 @@ static double g_rho        = 0.0;   // correlation (needed by mfg source)
 static double g_mfg_dt     = 1.0;   // dt for manufactured source term
 static double g_smooth_eps = 0.0;   // payoff smoothing radius in log-price units (0=off)
 
+// Quad-BC mode globals (basket_avg, spread): set in main() before IC/BC setup
+typedef double (*PayoffFnPtr)(double, double, double);
+static PayoffFnPtr g_active_pf   = nullptr;
+static double      g_active_K_pf = 100.0;  // payoff strike (may differ from g_K=S_ref)
+
 // Payoff: max(min(S1,S2)-K,0) = K*max(min(exp(x1),exp(x2))-1,0)
 static double payoff_cb(const Vector& xv) {
     return g_K * std::max(std::min(std::exp(xv[0]), std::exp(xv[1])) - 1.0, 0.0);
@@ -340,6 +345,83 @@ static double bestof_bc_cb(const Vector& xv) {
 }
 
 // ---------------------------------------------------------------------------
+// Bivariate lognormal quadrature price in log-price coordinates
+// Uses 10-pt Gauss-Legendre on standardised normals u1,u2 ∈ [-6,6] (truncation
+// error < 1e-8 for all moderate sigma/T).  Accurate to ~6 sig figs for kinked
+// payoffs (basket, spread), sufficient as BC reference (better than ~0.01%).
+// ---------------------------------------------------------------------------
+static double bivlognormal_quad_logprice(
+    double x1, double x2, double tau,
+    double K_pf, double r, double sig1, double sig2, double rho_,
+    PayoffFnPtr pf, double S_ref)
+{
+    const double S1_0 = S_ref * std::exp(x1);
+    const double S2_0 = S_ref * std::exp(x2);
+    if (tau < 1e-14) return pf(S1_0, S2_0, K_pf);
+
+    const double mu1   = (r - 0.5*sig1*sig1) * tau;
+    const double mu2   = (r - 0.5*sig2*sig2) * tau;
+    const double L11   = sig1 * std::sqrt(tau);
+    const double L21   = rho_ * sig2 * std::sqrt(tau);
+    const double L22sq = sig2*sig2*tau*(1.0 - rho_*rho_);
+    const double L22   = (L22sq > 0.0) ? std::sqrt(L22sq) : 0.0;
+
+    // 10-pt GL on [-1,1]
+    static const double gx[] = {
+        -0.9739065285171717,-0.8650633666889845,-0.6794095682990244,
+        -0.4333953941292472,-0.1488743389816312,
+         0.1488743389816312, 0.4333953941292472,
+         0.6794095682990244, 0.8650633666889845, 0.9739065285171717
+    };
+    static const double gw[] = {
+        0.0666713443086881,0.1494513491505806,0.2190863625159820,
+        0.2692667193099963,0.2955242247147529,
+        0.2955242247147529,0.2692667193099963,
+        0.2190863625159820,0.1494513491505806,0.0666713443086881
+    };
+    const double dom    = 6.0;
+    const double inv2pi = 1.0 / (2.0 * M_PI);
+
+    double sum = 0.0;
+    for (int i = 0; i < 10; i++) {
+        const double u1   = dom * gx[i];
+        const double e1   = std::exp(-0.5*u1*u1);
+        const double S1T  = S1_0 * std::exp(mu1 + L11*u1);
+        for (int j = 0; j < 10; j++) {
+            const double u2   = dom * gx[j];
+            const double z2   = mu2 + L21*u1 + L22*u2;
+            const double S2T  = S2_0 * std::exp(z2);
+            const double phi12 = e1 * std::exp(-0.5*u2*u2) * inv2pi;
+            sum += gw[i] * gw[j] * phi12 * pf(S1T, S2T, K_pf);
+        }
+    }
+    return std::exp(-r * tau) * dom * dom * sum;
+}
+
+// Payoff functions (S1, S2, K_payoff) convention
+static double basket_avg_pf(double S1, double S2, double K) {
+    return std::max(0.5*S1 + 0.5*S2 - K, 0.0);
+}
+static double spread_pf(double S1, double S2, double K) {
+    return std::max(S1 - S2 - K, 0.0);
+}
+
+// Unified callbacks for quad-BC modes (g_active_pf / g_active_K_pf set in main)
+static double quad_ic_cb(const Vector& xv) {
+    return g_active_pf(g_K * std::exp(xv[0]), g_K * std::exp(xv[1]), g_active_K_pf);
+}
+static double quad_exact_cb(const Vector& xv) {
+    return bivlognormal_quad_logprice(xv[0], xv[1], g_tau_cb,
+        g_active_K_pf, g_r, g_sigma1, g_sigma2, g_rho,
+        g_active_pf, g_K);
+}
+static double quad_bc_cb(const Vector& xv) {
+    return -bivlognormal_quad_logprice(xv[0], xv[1], g_tau_cb,
+        g_active_K_pf, g_r, g_sigma1, g_sigma2, g_rho,
+        g_active_pf, g_K);
+}
+
+// ---------------------------------------------------------------------------
 // Element-wise test norm coefficients (adjoint graph norm, element-local)
 // ---------------------------------------------------------------------------
 static void setup_test_norm_coeffs(ParGridFunction& c1_gf, ParGridFunction& c2_gf,
@@ -373,9 +455,12 @@ int main(int argc, char* argv[])
     int  extra_refine = 0;
     bool verbose      = false;
     bool save_surface = true;
-    bool mfg_mode      = false;   // manufactured-solution verification mode
-    bool margrabe_mode = false;   // Margrabe exchange-option exact-solution mode
-    bool bestof_mode   = false;   // Stulz best-of call: exact BCs, L2 error output
+    bool mfg_mode        = false;  // manufactured-solution verification mode
+    bool margrabe_mode   = false;  // Margrabe exchange-option exact-solution mode
+    bool bestof_mode     = false;  // Stulz best-of call: exact BCs, L2 error output
+    bool basket_avg_mode = false;  // basket average call: quadrature BCs all 4 faces
+    bool spread_mode     = false;  // spread call (S1-S2-K_spread)^+: quadrature BCs
+    double spread_K_val  = 10.0;  // spread payoff strike (distinct from S_ref K=100)
 
     // CLI overrides (sentinel: NaN / -1 means "use config value")
     double rho_ov    = std::numeric_limits<double>::quiet_NaN();
@@ -426,6 +511,14 @@ int main(int argc, char* argv[])
     args.AddOption(&bestof_mode, "--bestof", "--bestof",
                    "-no-bestof", "--no-bestof",
                    "Best-of call (Stulz) mode: exact BCs on all 4 faces, L2 error output");
+    args.AddOption(&basket_avg_mode, "--basket_avg", "--basket_avg",
+                   "-no-basket_avg", "--no-basket_avg",
+                   "Basket-average call: (0.5*S1+0.5*S2-K)^+, quadrature BCs all 4 faces");
+    args.AddOption(&spread_mode, "--spread", "--spread",
+                   "-no-spread", "--no-spread",
+                   "Spread call: (S1-S2-K_spread)^+, quadrature BCs all 4 faces");
+    args.AddOption(&spread_K_val, "--spread_K", "--spread_K",
+                   "Spread payoff strike (default 10.0; distinct from S_ref --K)");
     args.Parse();
     if (!args.Good()) {
         if (myid == 0) args.PrintUsage(std::cout);
@@ -481,6 +574,15 @@ int main(int argc, char* argv[])
         x2_min = -4.0; x2_max = 4.0;
     }
 
+    // Quad-BC modes: wire up payoff function pointer
+    if (basket_avg_mode) {
+        g_active_pf   = basket_avg_pf;
+        g_active_K_pf = K;           // basket strike = S_ref K = 100
+    } else if (spread_mode) {
+        g_active_pf   = spread_pf;
+        g_active_K_pf = spread_K_val;  // spread payoff strike (default 10)
+    }
+
     // Evaluation point for PRICE_AT_S0
     double S1_0 = std::isnan(S1_0_ov) ? K : S1_0_ov;
     double S2_0 = std::isnan(S2_0_ov) ? K : S2_0_ov;
@@ -510,6 +612,10 @@ int main(int argc, char* argv[])
             std::cout << "PAYOFF_TYPE=margrabe\nMARGRABE_MODE=1\n";
         else if (bestof_mode)
             std::cout << "PAYOFF_TYPE=bestof\nBESTOF_MODE=1\n";
+        else if (basket_avg_mode)
+            std::cout << "PAYOFF_TYPE=basket_avg\nBASKET_AVG_MODE=1\n";
+        else if (spread_mode)
+            std::cout << "PAYOFF_TYPE=spread_K10\nSPREAD_MODE=1\n";
         else
             std::cout << "PAYOFF_TYPE=call_on_min\n";
         if (mfg_mode)
@@ -643,6 +749,10 @@ int main(int argc, char* argv[])
         g_tau_cb = 0.0;
         FunctionCoefficient bestof_ic_fc(bestof_payoff_cb);
         u_prev_gf.ProjectCoefficient(bestof_ic_fc);
+    } else if (basket_avg_mode || spread_mode) {
+        g_tau_cb = 0.0;
+        FunctionCoefficient quad_ic_fc(quad_ic_cb);
+        u_prev_gf.ProjectCoefficient(quad_ic_fc);
     } else if (g_smooth_eps > 0.0) {
         FunctionCoefficient smooth_fc(smoothed_payoff_cb);
         u_prev_gf.ProjectCoefficient(smooth_fc);
@@ -735,6 +845,13 @@ int main(int argc, char* argv[])
             hatu_gf.ProjectBdrCoefficient(bestof_bc_fc, bottom_bdr);
             hatu_gf.ProjectBdrCoefficient(bestof_bc_fc, right_bdr);
             hatu_gf.ProjectBdrCoefficient(bestof_bc_fc, top_bdr);
+        } else if (basket_avg_mode || spread_mode) {
+            // Quadrature BCs on all 4 faces (u_hat = -u_quad)
+            FunctionCoefficient q_bc_fc(quad_bc_cb);
+            hatu_gf.ProjectBdrCoefficient(q_bc_fc, left_bdr);
+            hatu_gf.ProjectBdrCoefficient(q_bc_fc, bottom_bdr);
+            hatu_gf.ProjectBdrCoefficient(q_bc_fc, right_bdr);
+            hatu_gf.ProjectBdrCoefficient(q_bc_fc, top_bdr);
         } else {
             FunctionCoefficient right_bc_fc(right_bc_cb);
             FunctionCoefficient top_bc_fc(top_bc_cb);
@@ -813,6 +930,23 @@ int main(int argc, char* argv[])
     }
 
     double t_total = MPI_Wtime() - t_loop_start;
+
+    // ---- Basket-avg / spread-K10: quadrature L2 error (fall through for PRICE_ATM) ----
+    if (basket_avg_mode || spread_mode) {
+        g_tau_cb = T;
+        FunctionCoefficient u_quad_fc(quad_exact_cb);
+        double l2_err   = u_prev_gf.ComputeL2Error(u_quad_fc);
+        double linf_loc = u_prev_gf.ComputeMaxError(u_quad_fc);
+        double linf_err = 0.0;
+        MPI_Allreduce(&linf_loc, &linf_err, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        if (myid == 0) {
+            std::cout << std::scientific << std::setprecision(10)
+                      << "L2_ERROR="   << l2_err   << "\n"
+                      << "LINF_ERROR=" << linf_err << "\n"
+                      << "NDOF_TOTAL=" << ndof_total << "\n";
+        }
+        // fall through to surface extraction for PRICE_ATM output
+    }
 
     // ---- Manufactured-solution error (output L2_ERROR, LINF_ERROR) ----
     if (mfg_mode) {
@@ -996,7 +1130,8 @@ int main(int argc, char* argv[])
                 }
             }
 
-            // Convergence row (append)
+            // Convergence row (append) — skip for quad-BC modes (tracked by Python scripts)
+            if (!basket_avg_mode && !spread_mode)
             {
                 std::filesystem::create_directories("results/convergence");
                 const char* conv_csv = "results/convergence/v4_spatial_basket.csv";

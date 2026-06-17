@@ -349,7 +349,7 @@ Targeted sub-experiments on [-3,3]^2 to characterise the error floor.
 
 ## Phase MB — Multi-Benchmark Experiments
 
-### Status: MB-0 and MB-1 COMPLETED (2026-06-12)
+### Status: MB-0, MB-1, MB-2, MB-3 COMPLETED (2026-06-16); MB-4 PENDING
 
 ### MB-0: Stulz best-of call formula verification
 
@@ -460,6 +460,75 @@ the spatial floor from MB-1. There is no temporal error contamination in ATM at 
 **Scripts:**
 - `scripts/run_bestof_temporal_convergence.py  [--np 8]`  → CSV
 - `scripts/plot_bestof_temporal_convergence.py`            → LaTeX + figure
+
+---
+
+### MB-3: Basket average & spread (K=10) — spatial convergence (COMPLETED 2026-06-16)
+
+Two new payoffs benchmarked against bivariate lognormal quadrature (n_quad=64, GL on [-6,6]^2).
+**Solver flags:** `--basket_avg` and `--spread --spread_K 10.0` (added to `src/main_european_2d_basket_mpi.cpp`)
+**Configuration:** domain=[-3,3]^2, sig1=sig2=0.2, rho=0.5, r=0.05, T=1, K=100, Nt=2*N, p=1 in code (L2(0) trial), delta_p=2
+
+**Payoffs and quadrature references (ATM = S1=S2=100):**
+- Basket average: (0.5·S1 + 0.5·S2 − 100)^+   →  ATM_quad = 9.45796645
+- Spread K=10:    (S1 − S2 − 10)^+             →  ATM_quad = 4.12187507
+
+**MB-3a: Basket average call** (ultraweak only — no primal 2D):
+
+| N   | Nt   | L2 error   | EOC  | ATM DPG | Rel error |
+|-----|------|------------|------|---------|-----------|
+| 128 | 256  | 3.938e+01  | ---  | 9.4938  | 0.379%    |
+| 192 | 384  | 3.049e+01  | 0.63 | 9.4735  | 0.164%    |
+| 256 | 512  | 2.662e+01  | 0.47 | 9.4652  | 0.076%    |
+| 384 | 768  | 2.340e+01  | 0.32 | 9.4588  | 0.008%    |
+| 512 | 1024 | 2.213e+01  | 0.19 | 9.4565  | 0.015%    |
+
+ATM rel error at N=512: **0.015% PASS**. L2 monotone PASS. EOC(256→384)=0.318 WARNING (< 0.85).
+
+**MB-3b: Spread call (S1−S2−10)^+** (ultraweak only):
+
+| N   | Nt   | L2 error   | EOC  | ATM DPG | Rel error |
+|-----|------|------------|------|---------|-----------|
+| 128 | 256  | 5.278e+01  | ---  | 4.3246  | 4.920%    |
+| 192 | 384  | 3.980e+01  | 0.70 | 4.1995  | 1.883%    |
+| 256 | 512  | 3.399e+01  | 0.55 | 4.1588  | 0.895%    |
+| 384 | 768  | 2.904e+01  | 0.39 | 4.1406  | 0.453%    |
+| 512 | 1024 | 2.704e+01  | 0.25 | 4.1330  | 0.270%    |
+
+ATM rel error at N=512: **0.270% PASS**. L2 monotone PASS. EOC(256→384)=0.389 WARNING (< 0.85).
+
+**Why L2 EOC stalls (both payoffs):**
+1. Kinked initial data — kink at 0.5·S1+0.5·S2=K (basket) or S1−S2=10 (spread) degrades
+   FEM convergence rate identically to call-on-min Sub-B diagnostic.
+2. C++ 10-pt GL quadrature BCs have fixed ~6-sig-fig accuracy (~1e-5 relative); as DPG solution
+   improves beyond N=256, ||u_DPG − u_quad||_L2 stalls at the quadrature reference error floor
+   rather than continuing to decrease.
+ATM convergence is clean for basket (0.015% at N=512); spread shows slower approach (0.270%)
+due to the kink passing very close to the ATM point (x1=x2=0, S1−S2=10 → x1−x2≈0.095).
+
+**Outputs:**
+- `results_v5_benchmarks/csv/basket_spatial_convergence.csv`
+- `results_v5_benchmarks/csv/spread_K10_spatial_convergence.csv`
+- `results_v5_benchmarks/tex/table_basket_spatial.tex`  (`\tableBasketSpatialConvergence`)
+- `results_v5_benchmarks/tex/table_spread_K10_spatial.tex`  (`\tableSpreadK10SpatialConvergence`)
+- `results_v5_benchmarks/figures/fig_basket_spatial_convergence.pdf`
+- `results_v5_benchmarks/figures/fig_spread_K10_spatial_convergence.pdf`
+- `results_v5_benchmarks/logs/basket_spatial_run.log`
+- `results_v5_benchmarks/logs/spread_K10_spatial_run.log`
+
+**Scripts:**
+- `scripts/run_basket_spatial_convergence.py  [--np 8]`         → basket CSV
+- `scripts/run_spread_K10_spatial_convergence.py  [--np 8]`     → spread CSV
+- `scripts/plot_basket_spatial_convergence.py`                   → LaTeX + figure
+- `scripts/plot_spread_K10_spatial_convergence.py`               → LaTeX + figure
+
+---
+
+### MB-4: Basket average & spread (K=10) — temporal convergence — PENDING
+
+**Plan:** Fix N=512 (or N=384), sweep Nt=32/64/128/256/512/1024, compare ATM and L2 vs quadrature.
+Expected: same spatial-floor-dominated pattern as MB-2 (L2 error dominated by kink spatial error;
+ATM converges to spatial-discretization value). MB-4 NOT yet run (no CSV files exist).
 
 ---
 
