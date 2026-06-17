@@ -1,0 +1,27 @@
+\newcommand{\tableSpreadK10TemporalConvergencePrimal}{%
+\begin{table}[ht]
+\centering
+\caption{
+  Temporal convergence of the spread call option price,
+  primal $H^1(1)$ Galerkin formulation. Fixed spatial mesh $N=384$.
+  Payoff: $(S_1-S_2-\tilde{K})^+$, $\tilde{K}=10$.
+  Domain $[-3,3]^2$ in log-price coordinates,
+  $\sigma_1=\sigma_2=0.20$, $\rho=0.50$, $r=0.05$, $T=1$, $K=100$ ($S_{\rm ref}$).
+  Trial space: $H^1(1)$, $p=0$, $\Delta p=2$. Backward Euler ($\theta=1$).
+  Benchmark: 2D bivariate lognormal quadrature (Gauss-Hermite, $n_{\mathrm{quad}}=64$); $U_{\mathrm{quad}}=4.1219$.
+  Spatial-error floor at $N=384$: $\|u_h - u_{\mathrm{quad}}\|_{L^2} \approx 2.42e+01$  (kink at $S_1-S_2=\tilde{K}$ dominates; floor is $\sim\!100\%$ of $L^2(\Delta\tau_{\rm coarse})$).}
+\label{tab:spread_K10_temporal_primal}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$N_t$ & $\Delta\tau$ & $\|u_h - u_{\mathrm{quad}}\|_{L^2}$ & EOC & $u_h(0,0,T)$ & $U_{\mathrm{quad}}$ \\
+\midrule
+  32 & $0.03125$ & $2.421e+01$ & --- & $4.1057$ & $4.1219$ \\
+  64 & $0.01562$ & $2.419e+01$ & 0.00 & $4.1159$ & $4.1219$ \\
+  128 & $0.00781$ & $2.417e+01$ & 0.00 & $4.1211$ & $4.1219$ \\
+  256 & $0.00391$ & $2.417e+01$ & 0.00 & $4.1236$ & $4.1219$ \\
+  512 & $0.00195$ & $2.416e+01$ & 0.00 & $4.1249$ & $4.1219$ \\
+  1024 & $0.00098$ & $2.416e+01$ & 0.00 & $4.1256$ & $4.1219$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}

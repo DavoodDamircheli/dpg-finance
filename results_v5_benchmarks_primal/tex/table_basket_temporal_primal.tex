@@ -1,0 +1,27 @@
+\newcommand{\tableBasketTemporalConvergencePrimal}{%
+\begin{table}[ht]
+\centering
+\caption{
+  Temporal convergence of the basket-average call option price,
+  primal $H^1(1)$ Galerkin formulation. Fixed spatial mesh $N=384$.
+  Payoff: $(\tfrac{1}{2}S_1+\tfrac{1}{2}S_2-K)^+$, $K=100$.
+  Domain $[-3,3]^2$ in log-price coordinates,
+  $\sigma_1=\sigma_2=0.20$, $\rho=0.50$, $r=0.05$, $T=1$.
+  Trial space: $H^1(1)$, $p=0$, $\Delta p=2$. Backward Euler ($\theta=1$).
+  Benchmark: 2D bivariate lognormal quadrature (Gauss-Hermite, $n_{\mathrm{quad}}=64$); $U_{\mathrm{quad}}=9.4580$.
+  Spatial-error floor at $N=384$: $\|u_h - u_{\mathrm{quad}}\|_{L^2} \approx 2.04e+01$  (kink in initial payoff dominates; floor is $\sim\!100\%$ of $L^2(\Delta\tau_{\rm coarse})$).}
+\label{tab:basket_temporal_primal}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$N_t$ & $\Delta\tau$ & $\|u_h - u_{\mathrm{quad}}\|_{L^2}$ & EOC & $u_h(0,0,T)$ & $U_{\mathrm{quad}}$ \\
+\midrule
+  32 & $0.03125$ & $2.039e+01$ & --- & $9.4268$ & $9.4580$ \\
+  64 & $0.01562$ & $2.038e+01$ & 0.00 & $9.4408$ & $9.4580$ \\
+  128 & $0.00781$ & $2.038e+01$ & 0.00 & $9.4477$ & $9.4580$ \\
+  256 & $0.00391$ & $2.038e+01$ & 0.00 & $9.4512$ & $9.4580$ \\
+  512 & $0.00195$ & $2.038e+01$ & 0.00 & $9.4529$ & $9.4580$ \\
+  1024 & $0.00098$ & $2.038e+01$ & 0.00 & $9.4538$ & $9.4580$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}

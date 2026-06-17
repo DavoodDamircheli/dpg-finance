@@ -1,0 +1,43 @@
+=================================================================
+MBP-3b: Spread call (K=10) spatial convergence — PRIMAL Galerkin
+=================================================================
+Payoff     : (S1 - S2 - 10)^+
+Formulation: primal H1(1) bilinear Galerkin
+Domain     : [-3.0,3.0]^2  rho=0.5  sig1=sig2=0.2  r=0.05  T=1
+ATM_quad   : 4.12187507  (Python GH n=64; matches MB-3 ultraweak)
+BC/L2 ref  : C++ 10-pt GL quadrature (accurate at boundary; kink floor ~15-30)
+Mesh seq   : [128, 192, 256, 384, 512]  (Nt = 2*N each)
+
+
+──────────────────────────────────────────────────
+Running N=128  Nt=256  h=0.04688 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 128 --N_y 128 --N_t 256 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4511e+01  EOC=---  ATM=4.141619  rel=0.4790%  t=0.99s
+
+──────────────────────────────────────────────────
+Running N=192  Nt=384  h=0.03125 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 192 --N_y 192 --N_t 384 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4290e+01  EOC=0.022  ATM=4.132024  rel=0.2462%  t=2.95s
+
+──────────────────────────────────────────────────
+Running N=256  Nt=512  h=0.02344 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 256 --N_y 256 --N_t 512 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4216e+01  EOC=0.011  ATM=4.128070  rel=0.1503%  t=6.25s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=768  h=0.01562 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 384 --N_y 384 --N_t 768 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4164e+01  EOC=0.005  ATM=4.125371  rel=0.0848%  t=20.06s
+
+──────────────────────────────────────────────────
+Running N=512  Nt=1024  h=0.01172 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 512 --N_y 512 --N_t 1024 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4146e+01  EOC=0.003  ATM=4.124503  rel=0.0637%  t=48.23s
+
+Saved results_v5_benchmarks_primal/csv/spread_K10_spatial_convergence_primal.csv
+
+── Verification ──────────────────────────────────────────────────
+  L2 errors monotone: PASS  ['2.4511e+01', '2.4290e+01', '2.4216e+01', '2.4164e+01', '2.4146e+01']
+  EOC(N=256→384) = 0.005  WARNING: EOC(N=256→384)=0.005 FAILED (< 0.85)
+  ATM(N=512)=4.124503  ATM_quad=4.12187507  rel=0.0637%  PASS
+

@@ -1,0 +1,59 @@
+=================================================================
+MBP-4b: Spread call (K=10) temporal convergence — PRIMAL Galerkin
+=================================================================
+Payoff      : (S1 - S2 - 10)^+,  spread_K=10
+Fixed mesh  : N=384  domain=[-3,3]^2
+Nt sequence : [32, 64, 128, 256, 512, 1024]
+ATM_quad    : 4.12187507  (Python GH n=64)
+Spatial floor (MBP-3b, N=384, Nt=768): 2.415700e+01
+Expected: kink-dominated floor; ATM converges cleanly.
+
+
+──────────────────────────────────────────────────
+Running N=384  Nt=32  dtau=0.031250 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 384 --N_y 384 --N_t 32 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4212e+01  EOC_t=---  ATM=4.105721  rel=0.3919%  t=2.47s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=64  dtau=0.015625 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 384 --N_y 384 --N_t 64 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4187e+01  EOC_t=0.002  ATM=4.115928  rel=0.1443%  t=3.15s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=128  dtau=0.007812 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 384 --N_y 384 --N_t 128 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4174e+01  EOC_t=0.001  ATM=4.121069  rel=0.0196%  t=4.31s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=256  dtau=0.003906 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 384 --N_y 384 --N_t 256 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4168e+01  EOC_t=0.000  ATM=4.123648  rel=0.0430%  t=6.41s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=512  dtau=0.001953 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 384 --N_y 384 --N_t 512 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4165e+01  EOC_t=0.000  ATM=4.124940  rel=0.0744%  t=11.73s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=1024  dtau=0.000977 ...
+  CMD: build/bin/main_european_2d_primal --spread --spread_K 10.0 --N_x 384 --N_y 384 --N_t 1024 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.4163e+01  EOC_t=0.000  ATM=4.125587  rel=0.0901%  t=30.82s
+────────────────────────────────────────────────────────────
+Spatial-floor check (per spec MBP-4b):
+  spatial floor (N=384, Nt=1024) = 2.416301e+01
+  MBP-3b reference  (N=384, Nt=768) = 2.415700e+01
+  L2(Nt=32)  = 2.421207e+01
+  ratio floor/L2(Nt=32) = 0.9980
+  CHECK: floor is 99.8% of L2(Nt=32)
+  Kink-dominated pattern (see MBP-2): floor ~ L2(Nt=32).
+  Bumping to N=512 gives same floor (~2.415e+01 from MBP-3b). No benefit.
+  Proceeding with N=384.
+
+Saved results_v5_benchmarks_primal/csv/spread_K10_temporal_convergence_primal.csv
+
+── Verification ──────────────────────────────────────────────────
+  L2 monotone: PASS  ['2.4212e+01', '2.4187e+01', '2.4174e+01', '2.4168e+01', '2.4165e+01', '2.4163e+01']
+  EOC_time(Nt=64→128) = 0.001  WARNING: EOC_time=0.001 FAILED ([0.8,1.2])
+  EOC_time(Nt=128→256) = 0.000  WARNING: EOC_time=0.000 FAILED ([0.8,1.2])
+  Plateau |L2(1024)-L2(512)|/L2(512) = 0.0001  PASS
+

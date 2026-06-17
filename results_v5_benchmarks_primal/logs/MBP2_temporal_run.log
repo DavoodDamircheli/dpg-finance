@@ -1,0 +1,62 @@
+=================================================================
+MBP-2: Best-of call (Stulz) temporal convergence — PRIMAL Galerkin
+=================================================================
+Formulation : primal H1(1) bilinear Galerkin, backward Euler
+Fixed mesh  : N=384  domain=[-3,3]^2
+Nt sequence : [32, 64, 128, 256, 512, 1024]
+ATM exact   : 15.51852774  (Stulz 1982, MBP-0 verified)
+Spatial floor (MBP-1, N=384, Nt=768): 1.518280e+01
+Expected: kink-dominated floor (see MB-2/CLAUDE.md); ATM converges cleanly.
+
+
+──────────────────────────────────────────────────
+Running N=384  Nt=32  dtau=0.031250 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 384 --N_y 384 --N_t 32 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5166e+01  EOC_t=---  ATM=15.467248  rel=0.3304%  t=2.45s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=64  dtau=0.015625 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 384 --N_y 384 --N_t 64 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5173e+01  EOC_t=-0.001  ATM=15.491774  rel=0.1724%  t=3.02s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=128  dtau=0.007812 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 384 --N_y 384 --N_t 128 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5178e+01  EOC_t=-0.001  ATM=15.504054  rel=0.0933%  t=4.06s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=256  dtau=0.003906 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 384 --N_y 384 --N_t 256 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5181e+01  EOC_t=-0.000  ATM=15.510199  rel=0.0537%  t=5.35s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=512  dtau=0.001953 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 384 --N_y 384 --N_t 512 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5182e+01  EOC_t=-0.000  ATM=15.513272  rel=0.0339%  t=10.69s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=1024  dtau=0.000977 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 384 --N_y 384 --N_t 1024 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5183e+01  EOC_t=-0.000  ATM=15.514809  rel=0.0240%  t=28.82s
+────────────────────────────────────────────────────────────
+Spatial-floor check (per spec MBP-2):
+  spatial floor (N=384, Nt=1024) = 1.518301e+01
+  L2(Nt=32)                             = 1.516609e+01
+  ratio = floor/L2(Nt=32)               = 1.0011
+  CHECK: spatial floor is 100.1% of L2(Nt=32)
+  This is consistent with the KINK-DOMINATED error pattern from MB-2:
+  backward Euler over-smoothing at coarse Nt cancels the kink error,
+  making the total error at Nt=32 NOT isolate the temporal error.
+  Bumping to N=512 will not help (spatial floor ~ same, see MBP-1).
+  Proceeding with N=384; see MB-2/MBP-2 explanation in log.
+
+Saved results_v5_benchmarks_primal/csv/bestof_temporal_convergence_primal.csv
+
+── Verification ──────────────────────────────────────────────────
+  WARNING: L2_errors NOT monotone FAILED
+    Nt/L2: [(32, '1.5166e+01'), (64, '1.5173e+01'), (128, '1.5178e+01'), (256, '1.5181e+01'), (512, '1.5182e+01'), (1024, '1.5183e+01')]
+  EOC_time(Nt=64→128) = -0.001  WARNING: EOC_time=-0.001 FAILED ([0.8,1.2])
+  EOC_time(Nt=128→256) = -0.000  WARNING: EOC_time=-0.000 FAILED ([0.8,1.2])
+  Spatial floor at N=384, Nt=1024: 1.518301e+01
+  (MBP-1 reference at N=384, Nt=768: 1.518280e+01)
+

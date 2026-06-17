@@ -1,0 +1,26 @@
+\newcommand{\tableBestofSpatialConvergencePrimal}{%
+\begin{table}[ht]
+\centering
+\caption{
+  Spatial convergence of the DPG best-of call option price,
+  primal formulation.
+  Domain $[-3,3]^2$ in log-price coordinates,
+  $\sigma_1=\sigma_2=0.20$, $\rho=0.50$, $r=0.05$, $T=1$, $K=100$.
+  Trial space: $H^1(1)$ (continuous bilinear quads),
+  $p=0$ (primal convention), enrichment $\Delta p = 2$.
+  Benchmark: Stulz (1982) closed-form best-of call, $U^*=15.5185$.
+  Exact boundary conditions on all four faces. $N_t = 2N$.}
+\label{tab:bestof_spatial_primal}
+\begin{tabular}{@{}rrrrrl@{}}
+\toprule
+$N$ & $N_t$ & $\|u_h - u^*\|_{L^2}$ & EOC & $u_h(0,0,T)$ & $U^*$ \\
+\midrule
+  128 & 256 & $1.524e+01$ & --- & $15.4926$ & $15.5185$ \\
+  192 & 384 & $1.515e+01$ & 0.01 & $15.5057$ & $15.5185$ \\
+  256 & 512 & $1.510e+01$ & 0.01 & $15.5105$ & $15.5185$ \\
+  384 & 768 & $1.518e+01$ & -0.01 & $15.5143$ & $15.5185$ \\
+  512 & 1024 & $1.521e+01$ & -0.01 & $15.5158$ & $15.5185$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}

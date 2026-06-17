@@ -1,0 +1,44 @@
+=================================================================
+MBP-1: Best-of call (Stulz) spatial convergence — PRIMAL Galerkin
+=================================================================
+Formulation : primal  (H1(1) bilinear quads)
+Domain      : [-3.0,3.0]^2
+Params      : rho=0.5  sig1=sig2=0.2  r=0.05  T=1  K=100
+ATM exact   : 15.51852774  (Stulz 1982, MBP-0 verified)
+Mesh seq    : [128, 192, 256, 384, 512]  (Nt = 2*N each)
+p(primal)=0, delta_p=2 → H1(1) trial, test_order=2
+
+
+──────────────────────────────────────────────────
+Running N=128  Nt=256  h=0.04688 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 128 --N_y 128 --N_t 256 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5239e+01  EOC=---  ATM=15.492584  rel=0.1672%  t=0.86s
+
+──────────────────────────────────────────────────
+Running N=192  Nt=384  h=0.03125 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 192 --N_y 192 --N_t 384 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5150e+01  EOC=0.014  ATM=15.505673  rel=0.0828%  t=2.70s
+
+──────────────────────────────────────────────────
+Running N=256  Nt=512  h=0.02344 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 256 --N_y 256 --N_t 512 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5100e+01  EOC=0.011  ATM=15.510537  rel=0.0515%  t=5.76s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=768  h=0.01562 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 384 --N_y 384 --N_t 768 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5183e+01  EOC=-0.013  ATM=15.514296  rel=0.0273%  t=18.76s
+
+──────────────────────────────────────────────────
+Running N=512  Nt=1024  h=0.01172 ...
+  CMD: build/bin/main_european_2d_primal --bestof --N_x 512 --N_y 512 --N_t 1024 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2_error=1.5215e+01  EOC=-0.007  ATM=15.515764  rel=0.0178%  t=52.59s
+
+Saved results_v5_benchmarks_primal/csv/bestof_spatial_convergence_primal.csv
+
+── Verification ──────────────────────────────────────────────────
+  L2 errors monotone: WARNING: L2_errors NOT monotone FAILED
+    ['1.5239e+01', '1.5150e+01', '1.5100e+01', '1.5183e+01', '1.5215e+01']
+  EOC(N=256→384) = -0.013  WARNING: EOC=-0.013 FAILED (< 0.85)
+  ATM(N=512)=15.515764  exact=15.51852774  rel=0.0178%  PASS
+

@@ -1,0 +1,26 @@
+\newcommand{\tableBasketSpatialConvergencePrimal}{%
+\begin{table}[ht]
+\centering
+\caption{
+  Spatial convergence of the basket-average call option price,
+  primal $H^1(1)$ Galerkin formulation.
+  Payoff: $(\tfrac{1}{2}S_1+\tfrac{1}{2}S_2-K)^+$, $K=100$.
+  Domain $[-3,3]^2$ in log-price coordinates,
+  $\sigma_1=\sigma_2=0.20$, $\rho=0.50$, $r=0.05$, $T=1$.
+  Trial space: $H^1(1)$, $p=0$, $\Delta p=2$.
+  Benchmark: 2D bivariate lognormal quadrature (Gauss-Hermite, $n_{\mathrm{quad}}=64$); $U_{\mathrm{quad}}=9.4580$.
+  Exact quadrature boundary conditions on all four faces. $N_t = 2N$.}
+\label{tab:basket_spatial_primal}
+\begin{tabular}{@{}rrrrrl@{}}
+\toprule
+$N$ & $N_t$ & $\|u_h - u_{\mathrm{quad}}\|_{L^2}$ & EOC & $u_h(0,0,T)$ & $U_{\mathrm{quad}}$ \\
+\midrule
+  128 & 256 & $2.077e+01$ & --- & $9.4501$ & $9.4580$ \\
+  192 & 384 & $2.052e+01$ & 0.03 & $9.4522$ & $9.4580$ \\
+  256 & 512 & $2.044e+01$ & 0.01 & $9.4529$ & $9.4580$ \\
+  384 & 768 & $2.038e+01$ & 0.01 & $9.4535$ & $9.4580$ \\
+  512 & 1024 & $2.035e+01$ & 0.00 & $9.4538$ & $9.4580$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}

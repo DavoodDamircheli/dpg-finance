@@ -1,0 +1,26 @@
+\newcommand{\tableBestofTemporalConvergencePrimal}{%
+\begin{table}[ht]
+\centering
+\caption{
+  Temporal convergence of the DPG best-of call option price,
+  primal $H^1(1)$ Galerkin formulation.
+  Fixed spatial mesh $N=384$, domain $[-3,3]^2$,
+  $\sigma_1=\sigma_2=0.20$, $\rho=0.50$, $r=0.05$, $T=1$, $K=100$.
+  Backward Euler ($\theta=1$).
+  Benchmark: Stulz (1982) closed-form best-of call, $U^*=15.5185$.
+  EOC$_{\Delta\tau}$ computed as $\log_2(e_{k-1}/e_k)$ between consecutive $N_t$ (doubled).}
+\label{tab:bestof_temporal_primal}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$N_t$ & $\Delta\tau$ & $\|u_h - u^*\|_{L^2}$ & EOC$_{\Delta\tau}$ & $u_h(0,0,T)$ & $U^*$ \\
+\midrule
+  32 & $0.03125$ & $1.517e+01$ & --- & $15.4672$ & $15.5185$ \\
+  64 & $0.01562$ & $1.517e+01$ & -0.00 & $15.4918$ & $15.5185$ \\
+  128 & $0.00781$ & $1.518e+01$ & -0.00 & $15.5041$ & $15.5185$ \\
+  256 & $0.00391$ & $1.518e+01$ & -0.00 & $15.5102$ & $15.5185$ \\
+  512 & $0.00195$ & $1.518e+01$ & -0.00 & $15.5133$ & $15.5185$ \\
+  1024 & $0.00098$ & $1.518e+01$ & -0.00 & $15.5148$ & $15.5185$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+}

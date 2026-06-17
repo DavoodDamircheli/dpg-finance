@@ -1,0 +1,59 @@
+=================================================================
+MBP-4a: Basket-average call temporal convergence — PRIMAL Galerkin
+=================================================================
+Payoff      : (0.5*S1 + 0.5*S2 - K)^+, K=100
+Fixed mesh  : N=384  domain=[-3,3]^2
+Nt sequence : [32, 64, 128, 256, 512, 1024]
+ATM_quad    : 9.45796645  (Python GH n=64)
+Spatial floor (MBP-3a, N=384, Nt=768): 2.037600e+01
+Expected: kink-dominated floor; ATM converges cleanly.
+
+
+──────────────────────────────────────────────────
+Running N=384  Nt=32  dtau=0.031250 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 384 --N_y 384 --N_t 32 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0388e+01  EOC_t=---  ATM=9.426846  rel=0.3290%  t=2.45s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=64  dtau=0.015625 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 384 --N_y 384 --N_t 64 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0382e+01  EOC_t=0.000  ATM=9.440753  rel=0.1820%  t=3.16s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=128  dtau=0.007812 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 384 --N_y 384 --N_t 128 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0378e+01  EOC_t=0.000  ATM=9.447715  rel=0.1084%  t=4.26s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=256  dtau=0.003906 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 384 --N_y 384 --N_t 256 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0377e+01  EOC_t=0.000  ATM=9.451199  rel=0.0716%  t=5.77s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=512  dtau=0.001953 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 384 --N_y 384 --N_t 512 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0376e+01  EOC_t=0.000  ATM=9.452941  rel=0.0531%  t=11.47s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=1024  dtau=0.000977 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 384 --N_y 384 --N_t 1024 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0376e+01  EOC_t=0.000  ATM=9.453812  rel=0.0439%  t=29.97s
+────────────────────────────────────────────────────────────
+Spatial-floor check (per spec MBP-4a):
+  spatial floor (N=384, Nt=1024) = 2.037566e+01
+  MBP-3a reference  (N=384, Nt=768) = 2.037600e+01
+  L2(Nt=32)  = 2.038813e+01
+  ratio floor/L2(Nt=32) = 0.9994
+  CHECK: floor is 99.9% of L2(Nt=32)
+  Kink-dominated pattern (see MBP-2/MB-2): floor ~ L2(Nt=32).
+  Bumping to N=512 gives same floor (~2.035e+01 from MBP-3a). No benefit.
+  Proceeding with N=384.
+
+Saved results_v5_benchmarks_primal/csv/basket_temporal_convergence_primal.csv
+
+── Verification ──────────────────────────────────────────────────
+  L2 monotone: PASS  ['2.0388e+01', '2.0382e+01', '2.0378e+01', '2.0377e+01', '2.0376e+01', '2.0376e+01']
+  EOC_time(Nt=64→128) = 0.000  WARNING: EOC_time=0.000 FAILED ([0.8,1.2])
+  EOC_time(Nt=128→256) = 0.000  WARNING: EOC_time=0.000 FAILED ([0.8,1.2])
+  Plateau |L2(1024)-L2(512)|/L2(512) = 0.0000  PASS
+

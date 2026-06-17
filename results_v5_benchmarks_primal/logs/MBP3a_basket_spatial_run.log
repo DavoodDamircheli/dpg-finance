@@ -1,0 +1,43 @@
+=================================================================
+MBP-3a: Basket-average call spatial convergence — PRIMAL Galerkin
+=================================================================
+Payoff     : (0.5*S1 + 0.5*S2 - K)^+, K=100
+Formulation: primal H1(1) bilinear Galerkin
+Domain     : [-3.0,3.0]^2  rho=0.5  sig1=sig2=0.2  r=0.05  T=1
+ATM_quad   : 9.45796645  (Python GH n=64; matches MB-3 ultraweak)
+BC/L2 ref  : C++ 10-pt GL quadrature (accurate at boundary; kink floor ~15-30)
+Mesh seq   : [128, 192, 256, 384, 512]  (Nt = 2*N each)
+
+
+──────────────────────────────────────────────────
+Running N=128  Nt=256  h=0.04688 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 128 --N_y 128 --N_t 256 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0767e+01  EOC=---  ATM=9.450130  rel=0.0829%  t=0.99s
+
+──────────────────────────────────────────────────
+Running N=192  Nt=384  h=0.03125 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 192 --N_y 192 --N_t 384 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0522e+01  EOC=0.029  ATM=9.452152  rel=0.0615%  t=2.95s
+
+──────────────────────────────────────────────────
+Running N=256  Nt=512  h=0.02344 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 256 --N_y 256 --N_t 512 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0437e+01  EOC=0.014  ATM=9.452877  rel=0.0538%  t=6.29s
+
+──────────────────────────────────────────────────
+Running N=384  Nt=768  h=0.01562 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 384 --N_y 384 --N_t 768 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0376e+01  EOC=0.007  ATM=9.453522  rel=0.0470%  t=20.13s
+
+──────────────────────────────────────────────────
+Running N=512  Nt=1024  h=0.01172 ...
+  CMD: build/bin/main_european_2d_primal --basket_avg --N_x 512 --N_y 512 --N_t 1024 --sig1 0.2 --sig2 0.2 --rho 0.5 --r 0.05 --T 1.0 --K 100.0 --x1_min -3.0 --x1_max 3.0 --x2_min -3.0 --x2_max 3.0
+  L2=2.0354e+01  EOC=0.004  ATM=9.453781  rel=0.0443%  t=47.46s
+
+Saved results_v5_benchmarks_primal/csv/basket_spatial_convergence_primal.csv
+
+── Verification ──────────────────────────────────────────────────
+  L2 errors monotone: PASS  ['2.0767e+01', '2.0522e+01', '2.0437e+01', '2.0376e+01', '2.0354e+01']
+  EOC(N=256→384) = 0.007  WARNING: EOC(N=256→384)=0.007 FAILED (< 0.85)
+  ATM(N=512)=9.453781  ATM_quad=9.45796645  rel=0.0443%  PASS
+
